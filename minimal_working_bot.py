@@ -91,16 +91,30 @@ class GoogleSheetsLogger:
                 worksheet.append_row(headers)
                 self.logger.info(f"✅ Worksheet creado: {self.worksheet_name}")
             
-            # Preparar datos
+            # Preparar datos en formato correcto del spreadsheet
+            timestamp = trade_data.get('timestamp', '')
+            # Separar fecha y hora
+            if 'T' in timestamp:
+                date_part = timestamp.split('T')[0]
+                time_part = timestamp.split('T')[1].split('.')[0]
+            else:
+                date_part = timestamp.split(' ')[0] if ' ' in timestamp else timestamp
+                time_part = timestamp.split(' ')[1] if ' ' in timestamp else ''
+            
             row_data = [
-                trade_data.get('timestamp', ''),
-                trade_data.get('symbol', ''),
-                trade_data.get('side', ''),
-                trade_data.get('price', ''),
-                trade_data.get('amount', ''),
-                trade_data.get('result', ''),
-                trade_data.get('pnl', ''),
-                trade_data.get('capital', '')
+                date_part,  # Fecha
+                time_part,  # Hora
+                trade_data.get('symbol', ''),  # Símbolo
+                trade_data.get('side', ''),  # Dirección
+                f"${trade_data.get('price', ''):,.2f}" if trade_data.get('price') else '',  # Precio Entrada
+                trade_data.get('amount', ''),  # Cantidad
+                f"${trade_data.get('amount', 0) * trade_data.get('price', 0):,.2f}",  # Monto
+                'breakout',  # Estrategia
+                '0.6%',  # Confianza
+                'CAUTELA - Señal automática del bot',  # IA Validación
+                trade_data.get('result', ''),  # Resultado
+                f"${trade_data.get('pnl', 0):,.2f}",  # P&L
+                f"${trade_data.get('capital', 0):,.2f}"  # Balance
             ]
             
             # Agregar fila
@@ -131,6 +145,10 @@ class MinimalTradingBot:
         
         # Configurar Google Sheets
         self.sheets_logger = GoogleSheetsLogger()
+        if self.sheets_logger.sheets_enabled:
+            self.logger.info("✅ Google Sheets habilitado")
+        else:
+            self.logger.warning("⚠️ Google Sheets NO habilitado")
         
         # Configurar manejo de señales
         signal.signal(signal.SIGTERM, self.handle_shutdown)
@@ -248,7 +266,11 @@ class MinimalTradingBot:
         self.trades_history.append(trade)
         
         # Log a Google Sheets
-        self.sheets_logger.log_trade(trade)
+        sheets_result = self.sheets_logger.log_trade(trade)
+        if sheets_result:
+            self.logger.info("✅ Trade registrado en Google Sheets")
+        else:
+            self.logger.warning("⚠️ Error registrando en Google Sheets")
         
         return trade
     
