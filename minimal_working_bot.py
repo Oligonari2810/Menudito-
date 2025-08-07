@@ -35,17 +35,31 @@ class GoogleSheetsLogger:
         try:
             import gspread
             from google.oauth2.service_account import Credentials
+            import json
             
             # Configurar credenciales
             scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
             
+            # Intentar desde archivo local primero
             if os.path.exists('credentials.json'):
                 creds = Credentials.from_service_account_file('credentials.json', scopes=scope)
                 self.client = gspread.authorize(creds)
                 self.sheets_enabled = True
-                self.logger.info("✅ Google Sheets configurado correctamente")
+                self.logger.info("✅ Google Sheets configurado desde archivo local")
+            # Intentar desde variable de entorno (Render)
+            elif os.getenv('GOOGLE_SHEETS_CREDENTIALS'):
+                try:
+                    credentials_json = os.getenv('GOOGLE_SHEETS_CREDENTIALS')
+                    creds = Credentials.from_service_account_info(json.loads(credentials_json), scopes=scope)
+                    self.client = gspread.authorize(creds)
+                    self.sheets_enabled = True
+                    self.logger.info("✅ Google Sheets configurado desde variable de entorno")
+                except Exception as e:
+                    self.logger.error(f"❌ Error configurando desde variable de entorno: {e}")
+                    self.sheets_enabled = False
             else:
-                self.logger.warning("⚠️ credentials.json no encontrado, Google Sheets deshabilitado")
+                self.logger.warning("⚠️ credentials.json no encontrado y GOOGLE_SHEETS_CREDENTIALS no configurado")
+                self.sheets_enabled = False
                 
         except Exception as e:
             self.logger.error(f"❌ Error configurando Google Sheets: {e}")
