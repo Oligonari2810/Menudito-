@@ -23,6 +23,80 @@ logging.basicConfig(
     ]
 )
 
+class GoogleSheetsLogger:
+    """Logger simple para Google Sheets"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.sheets_enabled = False
+        self.spreadsheet_name = "Trading Bot Log"
+        self.worksheet_name = "Trading Log"
+        
+        try:
+            import gspread
+            from google.oauth2.service_account import Credentials
+            
+            # Configurar credenciales
+            scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+            
+            if os.path.exists('credentials.json'):
+                creds = Credentials.from_service_account_file('credentials.json', scopes=scope)
+                self.client = gspread.authorize(creds)
+                self.sheets_enabled = True
+                self.logger.info("✅ Google Sheets configurado correctamente")
+            else:
+                self.logger.warning("⚠️ credentials.json no encontrado, Google Sheets deshabilitado")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error configurando Google Sheets: {e}")
+            self.sheets_enabled = False
+    
+    def log_trade(self, trade_data: Dict) -> bool:
+        """Log trade a Google Sheets"""
+        if not self.sheets_enabled:
+            return False
+            
+        try:
+            import gspread
+            
+            # Abrir o crear spreadsheet
+            try:
+                spreadsheet = self.client.open(self.spreadsheet_name)
+            except gspread.SpreadsheetNotFound:
+                spreadsheet = self.client.create(self.spreadsheet_name)
+                self.logger.info(f"✅ Spreadsheet creado: {self.spreadsheet_name}")
+            
+            # Abrir o crear worksheet
+            try:
+                worksheet = spreadsheet.worksheet(self.worksheet_name)
+            except gspread.WorksheetNotFound:
+                worksheet = spreadsheet.add_worksheet(title=self.worksheet_name, rows=1000, cols=10)
+                # Agregar headers
+                headers = ['Timestamp', 'Symbol', 'Side', 'Price', 'Amount', 'Result', 'P&L', 'Capital']
+                worksheet.append_row(headers)
+                self.logger.info(f"✅ Worksheet creado: {self.worksheet_name}")
+            
+            # Preparar datos
+            row_data = [
+                trade_data.get('timestamp', ''),
+                trade_data.get('symbol', ''),
+                trade_data.get('side', ''),
+                trade_data.get('price', ''),
+                trade_data.get('amount', ''),
+                trade_data.get('result', ''),
+                trade_data.get('pnl', ''),
+                trade_data.get('capital', '')
+            ]
+            
+            # Agregar fila
+            worksheet.append_row(row_data)
+            self.logger.info("✅ Trade registrado en Google Sheets")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error registrando en Google Sheets: {e}")
+            return False
+
 class MinimalTradingBot:
     """Bot de trading mínimo funcional optimizado para plan gratuito"""
     
@@ -39,6 +113,9 @@ class MinimalTradingBot:
         # Simular datos de trading
         self.trades_history = []
         self.daily_pnl = 0.0
+        
+        # Configurar Google Sheets
+        self.sheets_logger = GoogleSheetsLogger()
         
         # Configurar manejo de señales
         signal.signal(signal.SIGTERM, self.handle_shutdown)
@@ -154,6 +231,10 @@ class MinimalTradingBot:
         }
         
         self.trades_history.append(trade)
+        
+        # Log a Google Sheets
+        self.sheets_logger.log_trade(trade)
+        
         return trade
     
     def run_trading_cycle(self):
@@ -198,7 +279,7 @@ class MinimalTradingBot:
             self.logger.warning("⚠️ Algunas variables faltan, continuando...")
         
         # Enviar mensaje de inicio
-        start_msg = "🤖 BOT MÍNIMO INICIADO\n\n✅ Optimizado para plan gratuito\n📊 Simulación estable\n🔄 Ciclos cada 120 segundos\n📱 Alertas reducidas"
+        start_msg = "🤖 BOT MÍNIMO INICIADO\n\n✅ Optimizado para plan gratuito\n📊 Simulación estable\n🔄 Ciclos cada 120 segundos\n📱 Alertas reducidas\n📊 Google Sheets habilitado"
         self.send_telegram_message(start_msg)
         
         self.logger.info("✅ Bot mínimo iniciado correctamente")
