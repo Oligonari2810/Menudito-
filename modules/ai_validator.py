@@ -109,9 +109,9 @@ class AIValidator:
                 validated = False
                 confidence_boost = -0.2  # -20% de confianza
             else:  # CAUTELA
-                # NUEVA LÓGICA: Para testnet, aceptar CAUTELA si confianza ≥ 15%
+                # NUEVA LÓGICA: Para testnet, aceptar CAUTELA si confianza ≥ 5%
                 signal_confidence = signal.get('confidence', 0.3)
-                if signal_confidence >= 0.15:
+                if signal_confidence >= 0.05:
                     validated = True
                     self.logger.info(f"✅ Aceptando señal con CAUTELA (confianza: {signal_confidence:.1%})")
                 else:

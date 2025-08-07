@@ -430,7 +430,7 @@ class SurvivorTradingBot:
             # Verificar tiempo mínimo entre operaciones
             if self.last_trade_time:
                 time_since_last = (datetime.now() - self.last_trade_time).total_seconds()
-                if time_since_last < 90:  # Mínimo 1.5 minutos entre operaciones
+                if time_since_last < 30:  # Mínimo 30 segundos entre operaciones
                     return False
             
             return True

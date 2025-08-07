@@ -34,20 +34,20 @@ class FinalSurvivorTradingConfig:
     # ===== CONFIGURACIÓN FINAL AJUSTADA =====
     TRADING = {
         'initial_capital': 50.0,
-        'confidence_threshold': 0.10,  # 10% mínimo (ajustado para más señales)
-        'stop_loss_percent': 0.7,  # 0.7% stop loss (más ajustado)
-        'take_profit_percent': 4.2,  # 4.2% take profit (ajustado)
-        'max_daily_loss': 15.0,  # 15% máximo pérdida diaria
-        'position_size_percent': 0.22,  # 22% del capital por operación (ajustado)
-        'update_interval': 60,  # 1 minuto
-        'max_trades_per_day': 15,  # Máximo 15 operaciones por día (ajustado para más oportunidades)
-        'min_profit_per_trade': 0.032,  # 3.2% mínimo por operación
+        'confidence_threshold': 0.05,  # 5% mínimo (más permisivo para más señales)
+        'stop_loss_percent': 0.5,  # 0.5% stop loss (más ajustado)
+        'take_profit_percent': 3.0,  # 3.0% take profit (más realista)
+        'max_daily_loss': 20.0,  # 20% máximo pérdida diaria (más permisivo)
+        'position_size_percent': 0.25,  # 25% del capital por operación (más agresivo)
+        'update_interval': 30,  # 30 segundos (más frecuente)
+        'max_trades_per_day': 20,  # Máximo 20 operaciones por día (más oportunidades)
+        'min_profit_per_trade': 0.02,  # 2% mínimo por operación (más realista)
         'compound_on_profits': True,
         'leverage_enabled': True,
-        'max_leverage': 3,  # 3x apalancamiento
-        'daily_capital_limit': 0.60,  # 60% del capital por día (ajustado para más operaciones)
-        'block_day_after_loss': 0.15,  # Bloquear día tras pérdida >15%
-        'capital_reserve_pct': 40,  # 40% del capital protegido (ajustado para más operaciones)
+        'max_leverage': 2,  # 2x apalancamiento (más conservador)
+        'daily_capital_limit': 0.70,  # 70% del capital por día (más permisivo)
+        'block_day_after_loss': 0.20,  # Bloquear día tras pérdida >20%
+        'capital_reserve_pct': 30,  # 30% del capital protegido (más agresivo)
         'adaptive_mode': True  # Modo adaptativo activado
     }
     
