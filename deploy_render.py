@@ -38,38 +38,18 @@ class RenderDeployment:
     def start_bot(self):
         """Iniciar el bot de trading"""
         try:
-            logging.info("🚀 Iniciando bot de trading en Render (Plan Gratuito)...")
+            logging.info("🚀 Iniciando bot mínimo funcional en Render...")
             
             # Configuraciones específicas para plan gratuito
             logging.info("📋 Configuraciones para plan gratuito:")
-            logging.info("  • Timeout extendido para APIs")
-            logging.info("  • Manejo de sleep/wake cycle")
-            logging.info("  • Reconexión automática")
+            logging.info("  • Bot mínimo sin dependencias problemáticas")
+            logging.info("  • Simulación de trading")
+            logging.info("  • Alertas Telegram")
             logging.info("  • Logging optimizado")
             
-            # Primero probar con bot simplificado
-            logging.info("🧪 Probando con bot simplificado...")
-            test_result = subprocess.run(
-                ["python3", "simple_bot.py"],
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
-            
-            if test_result.returncode != 0:
-                logging.error("❌ Bot simplificado falló")
-                logging.error(f"📤 STDOUT: {test_result.stdout}")
-                logging.error(f"📤 STDERR: {test_result.stderr}")
-                
-                # Intentar con bot principal de todas formas
-                logging.info("🔄 Intentando con bot principal...")
-            else:
-                logging.info("✅ Bot simplificado funcionó, probando bot principal...")
-            
-            # Comando para ejecutar el bot con configuraciones para plan gratuito
+            # Comando para ejecutar el bot mínimo
             cmd = [
-                "python3", "main_survivor.py",
-                "--strategy", "breakout"
+                "python3", "minimal_working_bot.py"
             ]
             
             logging.info(f"📋 Comando: {' '.join(cmd)}")
@@ -97,7 +77,7 @@ class RenderDeployment:
             
             # Verificar si el proceso sigue ejecutándose
             if self.bot_process.poll() is None:
-                logging.info("✅ Bot iniciado correctamente en plan gratuito")
+                logging.info("✅ Bot mínimo iniciado correctamente en plan gratuito")
                 return True
             else:
                 # Capturar la salida de error
