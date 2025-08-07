@@ -1,256 +1,169 @@
 #!/usr/bin/env python3
 """
-🚀 DESPLIEGUE AUTÓNOMO EN RENDER
-Script para ejecutar el bot de trading de forma continua en Render
+🚀 DEPLOY PROFESIONAL PARA RENDER
+Script optimizado para ejecutar el bot profesional en Render
 """
 
 import os
-import subprocess
 import time
-import logging
-import threading
-from datetime import datetime
-import requests
-from flask import Flask, jsonify
 import signal
-import sys
+import logging
+import subprocess
+from flask import Flask, request, jsonify
 
 # Configurar logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('render_deployment.log'),
-        logging.StreamHandler()
-    ]
-)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# Crear aplicación Flask para health checks
+# Configurar Flask
 app = Flask(__name__)
 
-class RenderDeployment:
-    def __init__(self):
-        self.bot_process = None
-        self.restart_count = 0
-        # Configuración para plan gratuito
-        self.max_restarts = 10  # Reducir reinicios máximos
-        self.restart_delay = 30  # Esperar 30 segundos entre reinicios
-        self.health_check_interval = 300  # Verificar cada 5 minutos
-        self.is_running = True
-        
-    def start_bot(self):
-        """Iniciar el bot de trading optimizado para plan gratuito"""
+# Variables globales
+bot_process = None
+is_shutting_down = False
+
+def handle_shutdown(signum, frame):
+    """Manejar cierre graceful"""
+    global is_shutting_down, bot_process
+    logger.info("🛑 Señal de terminación recibida en deploy")
+    is_shutting_down = True
+    
+    if bot_process:
+        logger.info("🔄 Terminando proceso del bot...")
         try:
-            logging.info("🚀 Iniciando bot mínimo funcional optimizado...")
-            
-            # Configuraciones específicas para plan gratuito
-            logging.info("📋 Configuraciones optimizadas para plan gratuito:")
-            logging.info("  • Bot mínimo sin dependencias problemáticas")
-            logging.info("  • Simulación estable con menos frecuencia")
-            logging.info("  • Alertas Telegram reducidas")
-            logging.info("  • Ciclos más largos (120s)")
-            logging.info("  • Manejo graceful de señales")
-            
-            # Comando para ejecutar el bot mínimo
-            cmd = [
-                "python3", "minimal_working_bot.py"
-            ]
-            
-            logging.info(f"📋 Comando: {' '.join(cmd)}")
-            
-            # Configurar variables de entorno para plan gratuito
-            env = os.environ.copy()
-            env['RENDER_FREE_TIER'] = 'true'
-            env['PYTHONUNBUFFERED'] = '1'
-            env['PYTHONDONTWRITEBYTECODE'] = '1'
-            env['PYTHONHASHSEED'] = 'random'
-            
-            self.bot_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                universal_newlines=True,
-                env=env,
-                preexec_fn=os.setsid  # Crear nuevo grupo de procesos
-            )
-            
-            logging.info(f"✅ Bot iniciado con PID: {self.bot_process.pid}")
-            
-            # Esperar más tiempo para plan gratuito
-            time.sleep(20)
-            
-            # Verificar si el proceso sigue ejecutándose
-            if self.bot_process.poll() is None:
-                logging.info("✅ Bot mínimo iniciado correctamente en plan gratuito")
-                return True
-            else:
-                # Capturar la salida de error
-                stdout, stderr = self.bot_process.communicate()
-                logging.error(f"❌ Bot se cerró inmediatamente")
-                logging.error(f"📤 STDOUT: {stdout}")
-                logging.error(f"📤 STDERR: {stderr}")
-                return False
-            
+            bot_process.terminate()
+            bot_process.wait(timeout=10)
+            logger.info("✅ Proceso del bot terminado")
+        except subprocess.TimeoutExpired:
+            logger.warning("⚠️ Forzando terminación del bot...")
+            bot_process.kill()
         except Exception as e:
-            logging.error(f"❌ Error iniciando bot: {e}")
-            return False
+            logger.error(f"❌ Error terminando bot: {e}")
+
+def start_bot():
+    """Iniciar el bot profesional"""
+    global bot_process
     
-    def check_bot_health(self):
-        """Verificar salud del bot"""
-        if self.bot_process is None:
-            return False
-            
-        # Verificar si el proceso sigue ejecutándose
-        if self.bot_process.poll() is None:
-            return True
-        else:
-            logging.warning("⚠️ Bot se detuvo inesperadamente")
-            return False
-    
-    def restart_bot(self):
-        """Reiniciar el bot"""
-        if self.restart_count >= self.max_restarts:
-            logging.error("🛑 Máximo número de reinicios alcanzado")
-            return False
-            
-        logging.info(f"🔄 Reiniciando bot (intento {self.restart_count + 1}/{self.max_restarts})")
+    try:
+        logger.info("🚀 Iniciando bot profesional...")
         
-        if self.bot_process:
-            self.bot_process.terminate()
-            time.sleep(5)
-            
-        self.restart_count += 1
-        return self.start_bot()
-    
-    def send_telegram_alert(self, message):
-        """Enviar alerta por Telegram"""
-        try:
-            bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
-            chat_id = os.getenv('TELEGRAM_CHAT_ID')
-            
-            if bot_token and chat_id:
-                url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-                data = {
-                    'chat_id': chat_id,
-                    'text': message,
-                    'parse_mode': 'HTML'
-                }
-                requests.post(url, json=data, timeout=10)
-                
-        except Exception as e:
-            logging.error(f"❌ Error enviando alerta Telegram: {e}")
-    
-    def monitor_bot(self):
-        """Monitorear el bot en un hilo separado"""
-        logging.info("🛡️ Iniciando monitoreo autónomo del bot...")
+        # Comando para ejecutar el bot
+        cmd = ["python3", "minimal_working_bot.py"]
         
-        # Enviar alerta de inicio
-        self.send_telegram_alert(
-            "☁️ BOT DESPLEGADO EN RENDER\n\n"
-            "🚀 Ejecutándose de forma autónoma\n"
-            "📊 Monitoreo 24/7 activado\n"
-            "🛡️ Reinicio automático configurado\n"
-            "📱 Alertas críticas habilitadas\n"
-            "🌐 Health checks activos"
+        # Iniciar proceso del bot
+        bot_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
         )
         
-        while self.is_running:
+        logger.info(f"✅ Bot iniciado con PID: {bot_process.pid}")
+        
+        # Monitorear salida del bot
+        while bot_process.poll() is None and not is_shutting_down:
             try:
-                # Verificar salud del bot
-                if not self.check_bot_health():
-                    logging.warning("⚠️ Bot no responde, reiniciando...")
-                    
-                    if not self.restart_bot():
-                        error_msg = "🛑 ERROR CRÍTICO: No se pudo reiniciar el bot"
-                        logging.error(error_msg)
-                        self.send_telegram_alert(error_msg)
-                        break
-                    else:
-                        self.send_telegram_alert(
-                            "🔄 BOT REINICIADO AUTOMÁTICAMENTE\n\n"
-                            f"📊 Intento: {self.restart_count}\n"
-                            "✅ Operación restaurada\n"
-                            "🛡️ Monitoreo continuo activo"
-                        )
-                
-                # Esperar antes de la siguiente verificación
-                time.sleep(300)  # Verificar cada 5 minutos (reducir reinicios)
-                
+                output = bot_process.stdout.readline()
+                if output:
+                    logger.info(f"🤖 BOT: {output.strip()}")
+                time.sleep(0.1)
             except Exception as e:
-                logging.error(f"❌ Error en monitoreo: {e}")
-                time.sleep(30)
-    
-    def cleanup(self):
-        """Limpiar recursos al salir"""
-        self.is_running = False
-        if self.bot_process:
-            self.bot_process.terminate()
-            logging.info("✅ Proceso del bot terminado")
-
-# Instancia global del deployment
-deployment = RenderDeployment()
-
-# Rutas Flask para health checks
-@app.route('/health')
-def health_check():
-    """Health check para Render"""
-    bot_status = "running" if deployment.check_bot_health() else "stopped"
-    return jsonify({
-        "status": "healthy",
-        "bot_status": bot_status,
-        "restart_count": deployment.restart_count,
-        "timestamp": datetime.now().isoformat()
-    })
+                logger.error(f"❌ Error leyendo salida del bot: {e}")
+                break
+        
+        # Verificar estado final
+        if bot_process.returncode is not None:
+            logger.info(f"📊 Bot terminado con código: {bot_process.returncode}")
+        else:
+            logger.info("✅ Bot ejecutándose correctamente")
+            
+    except Exception as e:
+        logger.error(f"❌ Error iniciando bot: {e}")
+        raise
 
 @app.route('/')
-def home():
-    """Página principal"""
-    return jsonify({
-        "message": "Trading Bot Survivor - Desplegado en Render",
-        "status": "operational",
-        "bot_pid": deployment.bot_process.pid if deployment.bot_process else None
-    })
-
-@app.route('/restart')
-def restart_bot():
-    """Endpoint para reiniciar el bot manualmente"""
-    if deployment.restart_bot():
-        return jsonify({"status": "success", "message": "Bot reiniciado"})
+def health_check():
+    """Health check para Render"""
+    global bot_process
+    
+    if bot_process and bot_process.poll() is None:
+        return jsonify({
+            'status': 'healthy',
+            'bot_running': True,
+            'pid': bot_process.pid,
+            'timestamp': time.time()
+        }), 200
     else:
-        return jsonify({"status": "error", "message": "No se pudo reiniciar el bot"})
+        return jsonify({
+            'status': 'unhealthy',
+            'bot_running': False,
+            'timestamp': time.time()
+        }), 503
 
-def signal_handler(signum, frame):
-    """Manejador de señales para limpieza"""
-    logging.info("🛑 Señal de terminación recibida")
-    deployment.cleanup()
-    sys.exit(0)
+@app.route('/health')
+def health():
+    """Endpoint de health check"""
+    return health_check()
+
+@app.route('/status')
+def status():
+    """Endpoint de status detallado"""
+    global bot_process
+    
+    status_info = {
+        'service': 'Trading Bot Professional',
+        'version': '1.0.0',
+        'timestamp': time.time(),
+        'bot_running': bot_process and bot_process.poll() is None,
+        'pid': bot_process.pid if bot_process else None,
+        'return_code': bot_process.returncode if bot_process else None
+    }
+    
+    return jsonify(status_info), 200
 
 def main():
     """Función principal"""
-    # Configurar manejador de señales
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    global bot_process
     
-    # Iniciar bot
-    if deployment.start_bot():
-        # Iniciar monitoreo en hilo separado
-        monitor_thread = threading.Thread(target=deployment.monitor_bot, daemon=True)
-        monitor_thread.start()
+    # Configurar manejo de señales
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    signal.signal(signal.SIGINT, handle_shutdown)
+    
+    logger.info("🚀 DEPLOY PROFESIONAL INICIADO")
+    logger.info("=" * 50)
+    
+    try:
+        # Iniciar bot en background
+        import threading
+        bot_thread = threading.Thread(target=start_bot, daemon=True)
+        bot_thread.start()
         
-        # Iniciar servidor Flask
-        port = int(os.environ.get('PORT', 10000))
-        logging.info(f"🌐 Iniciando servidor web en puerto {port}")
+        logger.info("✅ Bot iniciado en background")
+        logger.info("🌐 Iniciando servidor web en puerto 10000")
         
+        # Iniciar Flask
         app.run(
             host='0.0.0.0',
-            port=port,
+            port=int(os.environ.get('PORT', 10000)),
             debug=False,
             use_reloader=False
         )
-    else:
-        logging.error("❌ No se pudo iniciar el bot")
+        
+    except KeyboardInterrupt:
+        logger.info("🛑 Deploy detenido por usuario")
+    except Exception as e:
+        logger.error(f"❌ Error en deploy: {e}")
+        raise
+    finally:
+        # Limpiar proceso del bot
+        if bot_process:
+            try:
+                bot_process.terminate()
+                bot_process.wait(timeout=5)
+            except:
+                pass
 
 if __name__ == "__main__":
     main() 
