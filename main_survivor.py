@@ -751,6 +751,20 @@ def main():
     
     args = parser.parse_args()
     
+    # Configurar manejador de plan gratuito
+    try:
+        from free_tier_handler import FreeTierHandler
+        handler = FreeTierHandler()
+        handler.setup_free_tier_config()
+        handler.optimize_for_free_tier()
+        
+        if handler.is_free_tier:
+            print("🆓 Bot configurado para plan gratuito de Render")
+        else:
+            print("💎 Bot configurado para plan pagado")
+    except Exception as e:
+        print(f"⚠️ Error configurando plan gratuito: {e}")
+    
     # Mostrar configuración
     config = SurvivorTradingConfig()
     print(config.get_target_summary())

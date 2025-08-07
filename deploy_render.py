@@ -38,7 +38,14 @@ class RenderDeployment:
     def start_bot(self):
         """Iniciar el bot de trading"""
         try:
-            logging.info("🚀 Iniciando bot de trading en Render...")
+            logging.info("🚀 Iniciando bot de trading en Render (Plan Gratuito)...")
+            
+            # Configuraciones específicas para plan gratuito
+            logging.info("📋 Configuraciones para plan gratuito:")
+            logging.info("  • Timeout extendido para APIs")
+            logging.info("  • Manejo de sleep/wake cycle")
+            logging.info("  • Reconexión automática")
+            logging.info("  • Logging optimizado")
             
             # Primero ejecutar pruebas
             logging.info("🧪 Ejecutando pruebas de verificación...")
@@ -46,7 +53,7 @@ class RenderDeployment:
                 ["python3", "test_bot_startup.py"],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=120  # Timeout extendido para plan gratuito
             )
             
             if test_result.returncode != 0:
@@ -57,7 +64,7 @@ class RenderDeployment:
             
             logging.info("✅ Pruebas pasaron, iniciando bot...")
             
-            # Comando para ejecutar el bot
+            # Comando para ejecutar el bot con configuraciones para plan gratuito
             cmd = [
                 "python3", "main_survivor.py",
                 "--strategy", "breakout"
@@ -65,23 +72,30 @@ class RenderDeployment:
             
             logging.info(f"📋 Comando: {' '.join(cmd)}")
             
+            # Configurar variables de entorno para plan gratuito
+            env = os.environ.copy()
+            env['RENDER_FREE_TIER'] = 'true'
+            env['PYTHONUNBUFFERED'] = '1'
+            env['PYTHONDONTWRITEBYTECODE'] = '1'
+            
             self.bot_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
-                universal_newlines=True
+                universal_newlines=True,
+                env=env
             )
             
             logging.info(f"✅ Bot iniciado con PID: {self.bot_process.pid}")
             
-            # Esperar un momento para ver si el bot se inicia correctamente
-            time.sleep(5)
+            # Esperar más tiempo para plan gratuito
+            time.sleep(10)
             
             # Verificar si el proceso sigue ejecutándose
             if self.bot_process.poll() is None:
-                logging.info("✅ Bot iniciado correctamente")
+                logging.info("✅ Bot iniciado correctamente en plan gratuito")
                 return True
             else:
                 # Capturar la salida de error
