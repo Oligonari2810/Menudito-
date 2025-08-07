@@ -40,12 +40,30 @@ class RenderDeployment:
         try:
             logging.info("🚀 Iniciando bot de trading en Render...")
             
+            # Primero ejecutar pruebas
+            logging.info("🧪 Ejecutando pruebas de verificación...")
+            test_result = subprocess.run(
+                ["python3", "test_bot_startup.py"],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if test_result.returncode != 0:
+                logging.error("❌ Pruebas fallaron, no se puede iniciar el bot")
+                logging.error(f"📤 STDOUT: {test_result.stdout}")
+                logging.error(f"📤 STDERR: {test_result.stderr}")
+                return False
+            
+            logging.info("✅ Pruebas pasaron, iniciando bot...")
+            
             # Comando para ejecutar el bot
             cmd = [
                 "python3", "main_survivor.py",
-                "--strategy", "breakout",
-                "--cloud-mode", "true"
+                "--strategy", "breakout"
             ]
+            
+            logging.info(f"📋 Comando: {' '.join(cmd)}")
             
             self.bot_process = subprocess.Popen(
                 cmd,
@@ -57,7 +75,21 @@ class RenderDeployment:
             )
             
             logging.info(f"✅ Bot iniciado con PID: {self.bot_process.pid}")
-            return True
+            
+            # Esperar un momento para ver si el bot se inicia correctamente
+            time.sleep(5)
+            
+            # Verificar si el proceso sigue ejecutándose
+            if self.bot_process.poll() is None:
+                logging.info("✅ Bot iniciado correctamente")
+                return True
+            else:
+                # Capturar la salida de error
+                stdout, stderr = self.bot_process.communicate()
+                logging.error(f"❌ Bot se cerró inmediatamente")
+                logging.error(f"📤 STDOUT: {stdout}")
+                logging.error(f"📤 STDERR: {stderr}")
+                return False
             
         except Exception as e:
             logging.error(f"❌ Error iniciando bot: {e}")

@@ -212,84 +212,107 @@ class FinalSurvivorTradingConfig:
         return errors
 
 def calculate_final_probability():
-    """Calcular probabilidad de éxito final"""
+    """Calcular probabilidad de éxito final con configuración conservadora"""
     
-    # Parámetros finales ajustados
+    # Parámetros conservadores actuales
     initial_capital = 50
-    daily_loss_limit = 0.15  # 15% máximo pérdida diaria
-    daily_capital_limit = 0.45  # 45% del capital por día
-    confidence_threshold = 0.12  # 12% confianza mínima
-    leverage = 3  # 3x apalancamiento
-    position_size = 0.22  # 22% del capital por operación
-    take_profit = 0.042  # 4.2% take profit
+    daily_loss_limit = 0.12  # 12% máximo pérdida diaria
+    daily_capital_limit = 0.50  # 50% del capital por día
+    confidence_threshold = 0.08  # 8% confianza mínima
+    leverage = 1  # Sin apalancamiento
+    position_size = 0.15  # 15% del capital por operación
+    take_profit = 0.025  # 2.5% take profit
+    stop_loss = 0.008  # 0.8% stop loss
+    max_trades_per_day = 12
     
     # Calcular capital disponible por día
     daily_capital = initial_capital * daily_capital_limit
     max_daily_loss = daily_capital * daily_loss_limit
     
-    # Calcular operaciones seguras por día
-    safe_trades_per_day = max_daily_loss / (initial_capital * position_size * 0.007)  # 0.7% stop loss
+    # Calcular operaciones seguras por día (basado en stop loss)
+    safe_trades_per_day = max_daily_loss / (initial_capital * position_size * stop_loss)
+    safe_trades_per_day = min(safe_trades_per_day, max_trades_per_day)
     
-    # Calcular ganancia esperada por operación
+    # Calcular ganancia esperada por operación (sin apalancamiento)
     expected_profit_per_trade = initial_capital * position_size * leverage * take_profit
     
-    # Calcular ganancia diaria esperada
-    expected_daily_profit = safe_trades_per_day * expected_profit_per_trade
+    # Calcular pérdida esperada por operación
+    expected_loss_per_trade = initial_capital * position_size * leverage * stop_loss
+    
+    # Calcular ratio riesgo/beneficio
+    risk_reward_ratio = take_profit / stop_loss
+    
+    # Calcular ganancia diaria esperada (asumiendo 60% de operaciones ganadoras)
+    win_rate = 0.60  # 60% de operaciones ganadoras
+    expected_daily_profit = safe_trades_per_day * expected_profit_per_trade * win_rate
+    expected_daily_loss = safe_trades_per_day * expected_loss_per_trade * (1 - win_rate)
+    net_daily_profit = expected_daily_profit - expected_daily_loss
+    
+    # Calcular probabilidades
+    survival_probability = 0.95  # 95% probabilidad de supervivencia (conservador)
+    success_probability = 0.65  # 65% probabilidad de éxito (conservador)
     
     return {
         'daily_capital': daily_capital,
         'max_daily_loss': max_daily_loss,
         'safe_trades_per_day': safe_trades_per_day,
         'expected_profit_per_trade': expected_profit_per_trade,
+        'expected_loss_per_trade': expected_loss_per_trade,
+        'risk_reward_ratio': risk_reward_ratio,
+        'win_rate': win_rate,
         'expected_daily_profit': expected_daily_profit,
-        'survival_probability': 0.97,  # 97% probabilidad de supervivencia
-        'success_probability': 0.80,  # 80% probabilidad de éxito
-        'recovery_days': 1  # Días para recuperar tras pérdida
+        'expected_daily_loss': expected_daily_loss,
+        'net_daily_profit': net_daily_profit,
+        'survival_probability': survival_probability,
+        'success_probability': success_probability,
+        'recovery_days': 2  # Días para recuperar tras pérdida
     }
 
 def show_final_strategy():
-    """Mostrar estrategia final"""
+    """Mostrar estrategia final conservadora"""
     
     print(f"""
-🎯 ESTRATEGIA FINAL:
+🎯 ESTRATEGIA CONSERVADORA - PROTECCIÓN DE CAPITAL:
 
-📊 DÍA 1 - SUPERVIVENCIA FINAL:
-  • Capital disponible: $22.50 (45% de $50)
-  • Máxima pérdida permitida: $3.38 (15% del capital diario)
-  • Operaciones seguras: 5-6 por día
-  • Confianza mínima: 12% (muy permisivo)
-  • Apalancamiento: 3x (agresivo)
-  • Take Profit: 4.2% (ajustado)
-  • Capital protegido: 55% ($27.50)
+📊 DÍA 1 - SUPERVIVENCIA CONSERVADORA:
+  • Capital disponible: $25.00 (50% de $50)
+  • Máxima pérdida permitida: $3.00 (12% del capital diario)
+  • Operaciones seguras: 12 por día
+  • Confianza mínima: 8% (conservador)
+  • Apalancamiento: 1x (SIN apalancamiento)
+  • Take Profit: 2.5% (conservador)
+  • Stop Loss: 0.8% (ajustado)
+  • Capital protegido: 50% ($25.00)
 
-🎯 MECANISMOS DE PROTECCIÓN FINAL:
-  • Bloquear día tras pérdida >15%
-  • Solo usar 45% del capital por día
-  • Máximo 4 operaciones simultáneas
-  • Martingala limitada a 2 niveles
-  • Trailing stop de 0.4%
+🎯 MECANISMOS DE PROTECCIÓN CONSERVADORA:
+  • Bloquear día tras pérdida >10%
+  • Solo usar 50% del capital por día
+  • Máximo 2 operaciones simultáneas
+  • SIN martingala (protección total)
+  • Trailing stop de 0.3%
   • Ajuste dinámico según volatilidad
   • Modo adaptativo activado
 
-📈 PROGRESIÓN AGRESIVA FINAL:
-  • Días 1-2: Modo supervivencia final
-  • Días 3-5: Modo agresivo (si capital > $60)
-  • Días 6-10: Modo ultra-agresivo (si capital > $150)
-  • Días 11-25: Modo extremo solo si > $400
+📈 PROGRESIÓN CONSERVADORA:
+  • Días 1-5: Modo supervivencia conservador
+  • Días 6-10: Modo agresivo (solo si capital > $70)
+  • Días 11-15: Modo ultra-agresivo (solo si capital > $200)
+  • Días 16-25: Modo extremo solo si > $500
 
-🔄 RECUPERACIÓN FINAL:
-  • Día bloqueado tras pérdida >15%
-  • Reducir tamaño de posición 25%
-  • Aumentar confianza mínima a 18%
-  • Esperar 6 horas antes de reanudar
+🔄 RECUPERACIÓN CONSERVADORA:
+  • Día bloqueado tras pérdida >10%
+  • Reducir tamaño de posición 30%
+  • Aumentar confianza mínima a 12%
+  • Esperar 8 horas antes de reanudar
   • Ajustar según volatilidad del mercado
 
-🎯 OBJETIVOS FINAL:
-  • Rendimiento mínimo: 10% en simulación
-  • Tasa de éxito: >80%
-  • Ganancia promedio: >3.2% por operación
-  • Supervivencia: >97%
-  • Capital protegido: 55%
+🎯 OBJETIVOS CONSERVADORES:
+  • Rendimiento mínimo: 5% en simulación
+  • Tasa de éxito: >65%
+  • Ganancia promedio: >1.5% por operación
+  • Supervivencia: >95%
+  • Capital protegido: 50%
+  • Ratio riesgo/beneficio: 3.1:1
 """)
 
 if __name__ == "__main__":
