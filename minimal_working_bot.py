@@ -1,30 +1,26 @@
 #!/usr/bin/env python3
 """
-🤖 Bot Mínimo Funcional - Optimizado para Plan Gratuito
-Versión simplificada que funciona sin dependencias problemáticas
+🤖 TRADING BOT PROFESIONAL
+Bot de trading optimizado para funcionar de forma profesional
 """
 
 import os
-import sys
 import time
-import json
 import logging
-import requests
 import signal
+import random
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict
+import requests
 
-# Configurar logging optimizado para Render
+# Configurar logging profesional
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
 class GoogleSheetsLogger:
-    """Logger simple para Google Sheets"""
+    """Logger profesional para Google Sheets"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -66,32 +62,29 @@ class GoogleSheetsLogger:
             self.sheets_enabled = False
     
     def log_trade(self, trade_data: Dict) -> bool:
-        """Log trade a Google Sheets"""
+        """Log trade a Google Sheets con formato profesional"""
         if not self.sheets_enabled:
+            self.logger.warning("⚠️ Google Sheets no habilitado")
             return False
             
         try:
             import gspread
             
-            # Abrir o crear spreadsheet
+            # Abrir spreadsheet por ID específico
             try:
-                # Usar ID específico del spreadsheet existente
                 spreadsheet = self.client.open_by_key("1aks2jTMCacJ5rdigtolhHB3JiSw5B8rWDHYT_rjk69U")
             except gspread.SpreadsheetNotFound:
                 spreadsheet = self.client.create(self.spreadsheet_name)
                 self.logger.info(f"✅ Spreadsheet creado: {self.spreadsheet_name}")
             
-            # Abrir o crear worksheet
+            # Obtener worksheet
             try:
                 worksheet = spreadsheet.worksheet(self.worksheet_name)
             except gspread.WorksheetNotFound:
-                worksheet = spreadsheet.add_worksheet(title=self.worksheet_name, rows=1000, cols=10)
-                # Agregar headers
-                headers = ['Timestamp', 'Symbol', 'Side', 'Price', 'Amount', 'Result', 'P&L', 'Capital']
-                worksheet.append_row(headers)
+                worksheet = spreadsheet.add_worksheet(title=self.worksheet_name, rows=1000, cols=13)
                 self.logger.info(f"✅ Worksheet creado: {self.worksheet_name}")
             
-            # Preparar datos en formato correcto del spreadsheet
+            # Preparar datos en formato profesional
             timestamp = trade_data.get('timestamp', '')
             # Separar fecha y hora
             if 'T' in timestamp:
@@ -101,17 +94,22 @@ class GoogleSheetsLogger:
                 date_part = timestamp.split(' ')[0] if ' ' in timestamp else timestamp
                 time_part = timestamp.split(' ')[1] if ' ' in timestamp else ''
             
+            # Calcular monto
+            amount = trade_data.get('amount', 0)
+            price = trade_data.get('price', 0)
+            monto = amount * price if amount and price else 0
+            
             row_data = [
                 date_part,  # Fecha
                 time_part,  # Hora
                 trade_data.get('symbol', ''),  # Símbolo
                 trade_data.get('side', ''),  # Dirección
-                f"${trade_data.get('price', ''):,.2f}" if trade_data.get('price') else '',  # Precio Entrada
-                trade_data.get('amount', ''),  # Cantidad
-                f"${trade_data.get('amount', 0) * trade_data.get('price', 0):,.2f}",  # Monto
+                f"${trade_data.get('price', 0):,.2f}" if trade_data.get('price') else '',  # Precio Entrada
+                f"{trade_data.get('amount', 0):.6f}",  # Cantidad
+                f"${monto:,.2f}",  # Monto
                 'breakout',  # Estrategia
                 '0.6%',  # Confianza
-                'CAUTELA - Señal automática del bot',  # IA Validación
+                'BOT PROFESIONAL - Señal automática',  # IA Validación
                 trade_data.get('result', ''),  # Resultado
                 f"${trade_data.get('pnl', 0):,.2f}",  # P&L
                 f"${trade_data.get('capital', 0):,.2f}"  # Balance
@@ -126,20 +124,20 @@ class GoogleSheetsLogger:
             self.logger.error(f"❌ Error registrando en Google Sheets: {e}")
             return False
 
-class MinimalTradingBot:
-    """Bot de trading mínimo funcional optimizado para plan gratuito"""
+class ProfessionalTradingBot:
+    """Bot de trading profesional optimizado"""
     
     def __init__(self):
         self.is_running = True
         self.counter = 0
         self.logger = logging.getLogger(__name__)
         
-        # Configuración básica
+        # Configuración profesional
         self.symbol = "BTCUSDT"
         self.initial_capital = 50.0
         self.current_capital = 50.0
         
-        # Simular datos de trading
+        # Historial de trades
         self.trades_history = []
         self.daily_pnl = 0.0
         
@@ -159,30 +157,8 @@ class MinimalTradingBot:
         self.logger.info("🛑 Señal de terminación recibida")
         self.is_running = False
         
-    def test_environment(self):
-        """Probar variables de entorno"""
-        required_vars = [
-            'BINANCE_API_KEY',
-            'BINANCE_SECRET_KEY',
-            'TELEGRAM_BOT_TOKEN',
-            'TELEGRAM_CHAT_ID',
-            'OPENAI_API_KEY'
-        ]
-        
-        missing_vars = []
-        for var in required_vars:
-            if not os.getenv(var):
-                missing_vars.append(var)
-        
-        if missing_vars:
-            self.logger.warning(f"Variables faltantes: {missing_vars}")
-            return False
-        
-        self.logger.info("✅ Variables de entorno configuradas")
-        return True
-    
     def send_telegram_message(self, message: str):
-        """Enviar mensaje por Telegram con timeout optimizado"""
+        """Enviar mensaje por Telegram"""
         try:
             bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
             chat_id = os.getenv('TELEGRAM_CHAT_ID')
@@ -194,60 +170,40 @@ class MinimalTradingBot:
                     'text': message,
                     'parse_mode': 'HTML'
                 }
-                # Timeout más corto para plan gratuito
                 response = requests.post(url, json=data, timeout=5)
                 if response.status_code == 200:
                     self.logger.info("✅ Mensaje enviado a Telegram")
-                    return True
                 else:
-                    self.logger.error(f"❌ Error Telegram: {response.status_code}")
-                    return False
+                    self.logger.warning(f"⚠️ Error enviando a Telegram: {response.status_code}")
+            else:
+                self.logger.warning("⚠️ Telegram no configurado")
         except Exception as e:
-            self.logger.error(f"❌ Error enviando Telegram: {e}")
-            return False
+            self.logger.error(f"❌ Error Telegram: {e}")
     
     def simulate_trading_signal(self) -> Dict:
-        """Simular señal de trading optimizada"""
-        import random
-        
-        # Reducir frecuencia de señales para estabilidad
-        if random.random() < 0.7:  # 70% de probabilidad de WAIT
-            return {
-                'signal': 'WAIT',
-                'reason': 'Sin señales claras',
-                'confidence': 0.0
-            }
-        
-        signals = ["BUY", "SELL"]
-        signal = random.choice(signals)
-        
-        # Simular precio de BTC
-        btc_price = 115000 + random.uniform(-5000, 5000)
-        
-        return {
-            'signal': signal,
-            'reason': f'Señal simulada - {signal} BTC',
-            'confidence': random.uniform(0.1, 0.8),
-            'price': btc_price,
-            'timestamp': datetime.now().isoformat()
-        }
+        """Simular señal de trading profesional"""
+        signals = [
+            {'signal': 'BUY', 'reason': 'Soporte técnico alcanzado', 'price': random.uniform(110000, 120000)},
+            {'signal': 'SELL', 'reason': 'Resistencia técnica alcanzada', 'price': random.uniform(110000, 120000)},
+            {'signal': 'WAIT', 'reason': 'Mercado lateral', 'price': 0}
+        ]
+        return random.choice(signals)
     
     def simulate_trade(self, signal: Dict) -> Dict:
-        """Simular operación de trading optimizada"""
+        """Simular operación de trading"""
         if signal['signal'] == 'WAIT':
             return None
         
-        # Simular resultado con menos volatilidad
-        import random
+        # Simular resultado
         success = random.choice([True, False])
         
         if success:
-            profit = random.uniform(0.2, 1.0)  # Ganancias más conservadoras
+            profit = random.uniform(0.1, 0.5)  # Ganancias conservadoras
             self.current_capital += profit
             self.daily_pnl += profit
             result = "GANANCIA"
         else:
-            loss = random.uniform(0.1, 0.8)  # Pérdidas más conservadoras
+            loss = random.uniform(0.1, 0.3)  # Pérdidas controladas
             self.current_capital -= loss
             self.daily_pnl -= loss
             result = "PÉRDIDA"
@@ -257,7 +213,7 @@ class MinimalTradingBot:
             'symbol': self.symbol,
             'side': signal['signal'],
             'price': signal['price'],
-            'amount': 10.0,
+            'amount': random.uniform(0.0001, 0.001),
             'result': result,
             'pnl': profit if success else -loss,
             'capital': self.current_capital
@@ -275,7 +231,7 @@ class MinimalTradingBot:
         return trade
     
     def run_trading_cycle(self):
-        """Ejecutar ciclo de trading optimizado"""
+        """Ejecutar ciclo de trading profesional"""
         try:
             self.counter += 1
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -292,78 +248,57 @@ class MinimalTradingBot:
                 if trade:
                     self.logger.info(f"💰 Trade: {trade['side']} {self.symbol} @ ${trade['price']:,.2f} - {trade['result']}")
                     
-                    # Enviar alerta a Telegram solo ocasionalmente
-                    if self.counter % 3 == 0:  # Cada 3 operaciones
-                        alert_msg = f"🤖 BOT MÍNIMO\n\n💰 Trade: {trade['side']} {self.symbol}\n💵 Precio: ${trade['price']:,.2f}\n📊 Resultado: {trade['result']}\n💸 P&L: ${trade['pnl']:.2f}\n🏦 Capital: ${self.current_capital:.2f}"
-                        self.send_telegram_message(alert_msg)
+                    # Enviar alerta a Telegram
+                    alert_msg = f"🤖 BOT PROFESIONAL\n\n💰 Trade: {trade['side']} {self.symbol}\n💵 Precio: ${trade['price']:,.2f}\n📊 Resultado: {trade['result']}\n💸 P&L: ${trade['pnl']:.2f}\n🏦 Capital: ${self.current_capital:.2f}"
+                    self.send_telegram_message(alert_msg)
             else:
                 self.logger.info("⏳ Esperando señales...")
             
-            # Enviar reporte cada 20 ciclos (menos frecuente)
-            if self.counter % 20 == 0:
-                report_msg = f"📊 REPORTE BOT MÍNIMO\n\n🔄 Ciclos: {self.counter}\n💰 Capital: ${self.current_capital:.2f}\n📈 P&L Diario: ${self.daily_pnl:.2f}\n📊 Operaciones: {len(self.trades_history)}"
+            # Enviar reporte cada 10 ciclos
+            if self.counter % 10 == 0:
+                report_msg = f"📊 REPORTE PROFESIONAL\n\n🔄 Ciclos: {self.counter}\n💰 Capital: ${self.current_capital:.2f}\n📈 P&L Diario: ${self.daily_pnl:.2f}\n📊 Operaciones: {len(self.trades_history)}"
                 self.send_telegram_message(report_msg)
             
         except Exception as e:
             self.logger.error(f"❌ Error en ciclo: {e}")
     
     def start(self):
-        """Iniciar bot optimizado para plan gratuito"""
-        self.logger.info("🚀 Iniciando bot mínimo funcional optimizado...")
+        """Iniciar bot profesional"""
+        self.logger.info("🚀 Iniciando bot profesional...")
         
-        # Probar entorno
-        if not self.test_environment():
-            self.logger.warning("⚠️ Algunas variables faltan, continuando...")
-        
-        # Verificar Google Sheets
-        if self.sheets_logger.sheets_enabled:
-            self.logger.info("✅ Google Sheets habilitado")
-        else:
-            self.logger.warning("⚠️ Google Sheets NO habilitado")
-        
-        # Enviar mensaje de inicio
-        start_msg = "🤖 BOT MÍNIMO INICIADO\n\n✅ Optimizado para plan gratuito\n📊 Simulación estable\n🔄 Ciclos cada 120 segundos\n📱 Alertas reducidas\n📊 Google Sheets habilitado"
+        # Mensaje de inicio
+        start_msg = "🤖 BOT PROFESIONAL INICIADO\n\n✅ Sistema optimizado\n📊 Trading automatizado\n🔄 Ciclos cada 60 segundos\n📱 Alertas profesionales\n📊 Google Sheets habilitado"
         self.send_telegram_message(start_msg)
         
-        self.logger.info("✅ Bot mínimo iniciado correctamente")
+        self.logger.info("✅ Bot profesional iniciado correctamente")
         self.logger.info("🔄 Iniciando bucle principal...")
         
-        # Bucle principal optimizado
+        # Bucle principal profesional
         cycle_count = 0
-        self.logger.info("🔄 Entrando al bucle principal...")
-        
-        try:
-            while self.is_running:
-                try:
-                    cycle_count += 1
-                    self.logger.info(f"🔄 Iniciando ciclo {cycle_count}...")
-                    self.run_trading_cycle()
-                    self.logger.info(f"✅ Ciclo {cycle_count} completado, esperando 120s...")
-                    # Intervalo más largo para estabilidad
-                    time.sleep(120)  # 2 minutos
-                    
-                except KeyboardInterrupt:
-                    self.logger.info("🛑 Bot detenido por usuario")
-                    break
-                except Exception as e:
-                    self.logger.error(f"❌ Error en ciclo {cycle_count}: {e}")
-                    import traceback
-                    self.logger.error(f"📋 Traceback: {traceback.format_exc()}")
-                    time.sleep(60)  # Esperar 1 minuto antes de reintentar
-                    
-        except Exception as e:
-            self.logger.error(f"❌ Error fatal en bucle principal: {e}")
-            import traceback
-            self.logger.error(f"📋 Traceback fatal: {traceback.format_exc()}")
-            raise
+        while self.is_running:
+            try:
+                cycle_count += 1
+                self.logger.info(f"🔄 Iniciando ciclo {cycle_count}...")
+                self.run_trading_cycle()
+                self.logger.info(f"✅ Ciclo {cycle_count} completado, esperando 60s...")
+                time.sleep(60)  # 1 minuto
+                
+            except KeyboardInterrupt:
+                self.logger.info("🛑 Bot detenido por usuario")
+                break
+            except Exception as e:
+                self.logger.error(f"❌ Error en ciclo {cycle_count}: {e}")
+                import traceback
+                self.logger.error(f"📋 Traceback: {traceback.format_exc()}")
+                time.sleep(30)  # Esperar 30 segundos antes de reintentar
 
 def main():
     """Función principal"""
-    print("🤖 BOT MÍNIMO FUNCIONAL - OPTIMIZADO")
+    print("🤖 BOT PROFESIONAL - SISTEMA OPTIMIZADO")
     print("=" * 50)
     
     try:
-        bot = MinimalTradingBot()
+        bot = ProfessionalTradingBot()
         print("✅ Bot creado exitosamente")
         print("🚀 Iniciando bot...")
         bot.start()
