@@ -315,16 +315,27 @@ class MinimalTradingBot:
         if not self.test_environment():
             self.logger.warning("⚠️ Algunas variables faltan, continuando...")
         
+        # Verificar Google Sheets
+        if self.sheets_logger.sheets_enabled:
+            self.logger.info("✅ Google Sheets habilitado")
+        else:
+            self.logger.warning("⚠️ Google Sheets NO habilitado")
+        
         # Enviar mensaje de inicio
         start_msg = "🤖 BOT MÍNIMO INICIADO\n\n✅ Optimizado para plan gratuito\n📊 Simulación estable\n🔄 Ciclos cada 120 segundos\n📱 Alertas reducidas\n📊 Google Sheets habilitado"
         self.send_telegram_message(start_msg)
         
         self.logger.info("✅ Bot mínimo iniciado correctamente")
+        self.logger.info("🔄 Iniciando bucle principal...")
         
         # Bucle principal optimizado
+        cycle_count = 0
         while self.is_running:
             try:
+                cycle_count += 1
+                self.logger.info(f"🔄 Iniciando ciclo {cycle_count}...")
                 self.run_trading_cycle()
+                self.logger.info(f"✅ Ciclo {cycle_count} completado, esperando 120s...")
                 # Intervalo más largo para estabilidad
                 time.sleep(120)  # 2 minutos
                 
@@ -333,6 +344,8 @@ class MinimalTradingBot:
                 break
             except Exception as e:
                 self.logger.error(f"❌ Error en bucle principal: {e}")
+                import traceback
+                self.logger.error(f"📋 Traceback: {traceback.format_exc()}")
                 time.sleep(60)  # Esperar 1 minuto antes de reintentar
 
 def main():
