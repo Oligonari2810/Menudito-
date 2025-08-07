@@ -34,20 +34,20 @@ class FinalSurvivorTradingConfig:
     # ===== CONFIGURACIÓN FINAL AJUSTADA =====
     TRADING = {
         'initial_capital': 50.0,
-        'confidence_threshold': 0.05,  # 5% mínimo (más permisivo para más señales)
-        'stop_loss_percent': 0.5,  # 0.5% stop loss (más ajustado)
-        'take_profit_percent': 3.0,  # 3.0% take profit (más realista)
-        'max_daily_loss': 20.0,  # 20% máximo pérdida diaria (más permisivo)
-        'position_size_percent': 0.25,  # 25% del capital por operación (más agresivo)
-        'update_interval': 30,  # 30 segundos (más frecuente)
-        'max_trades_per_day': 20,  # Máximo 20 operaciones por día (más oportunidades)
-        'min_profit_per_trade': 0.02,  # 2% mínimo por operación (más realista)
+        'confidence_threshold': 0.08,  # 8% mínimo (conservador pero no muy restrictivo)
+        'stop_loss_percent': 0.8,  # 0.8% stop loss (más conservador)
+        'take_profit_percent': 2.5,  # 2.5% take profit (más realista y conservador)
+        'max_daily_loss': 12.0,  # 12% máximo pérdida diaria (más conservador)
+        'position_size_percent': 0.15,  # 15% del capital por operación (más conservador)
+        'update_interval': 60,  # 1 minuto (más tiempo para análisis)
+        'max_trades_per_day': 12,  # Máximo 12 operaciones por día (conservador)
+        'min_profit_per_trade': 0.015,  # 1.5% mínimo por operación (más conservador)
         'compound_on_profits': True,
-        'leverage_enabled': True,
-        'max_leverage': 2,  # 2x apalancamiento (más conservador)
-        'daily_capital_limit': 0.70,  # 70% del capital por día (más permisivo)
-        'block_day_after_loss': 0.20,  # Bloquear día tras pérdida >20%
-        'capital_reserve_pct': 30,  # 30% del capital protegido (más agresivo)
+        'leverage_enabled': False,  # SIN apalancamiento para proteger capital
+        'max_leverage': 1,  # Sin apalancamiento
+        'daily_capital_limit': 0.50,  # 50% del capital por día (más conservador)
+        'block_day_after_loss': 0.10,  # Bloquear día tras pérdida >10%
+        'capital_reserve_pct': 50,  # 50% del capital protegido (más conservador)
         'adaptive_mode': True  # Modo adaptativo activado
     }
     
@@ -88,22 +88,22 @@ class FinalSurvivorTradingConfig:
     
     # ===== GESTIÓN DE RIESGO FINAL AJUSTADA =====
     RISK_MANAGEMENT = {
-        'max_concurrent_trades': 4,  # Máximo 4 operaciones simultáneas (ajustado)
-        'max_drawdown': 0.15,  # 15% máximo drawdown
-        'profit_target_daily': 0.22,  # 22% objetivo diario (ajustado)
-        'stop_trading_on_loss': 0.20,  # Parar si pérdida > 20%
-        'resume_trading_on_profit': 0.025,  # Reanudar si ganancia > 2.5%
+        'max_concurrent_trades': 2,  # Máximo 2 operaciones simultáneas (más conservador)
+        'max_drawdown': 0.10,  # 10% máximo drawdown (más conservador)
+        'profit_target_daily': 0.15,  # 15% objetivo diario (más conservador)
+        'stop_trading_on_loss': 0.12,  # Parar si pérdida > 12%
+        'resume_trading_on_profit': 0.02,  # Reanudar si ganancia > 2%
         'dynamic_position_sizing': True,
         'trailing_stop': True,
-        'trailing_percent': 0.004,  # 0.4% trailing stop (ajustado)
-        'martingale_enabled': True,
-        'max_martingale_level': 2,  # Solo 2 niveles de martingala
+        'trailing_percent': 0.003,  # 0.3% trailing stop (más conservador)
+        'martingale_enabled': False,  # SIN martingala para proteger capital
+        'max_martingale_level': 0,  # Sin martingala
         'survival_mode': True,
         'day_block_after_loss': True,
-        'progressive_aggression': True,
+        'progressive_aggression': False,  # Sin agresión progresiva
         'volatility_adjustment': True,  # Ajustar según volatilidad
-        'drawdown_limit_pct': 15,  # 15% límite de drawdown
-        'daily_loss_limit_pct': 15,  # 15% límite de pérdida diaria
+        'drawdown_limit_pct': 10,  # 10% límite de drawdown (más conservador)
+        'daily_loss_limit_pct': 12,  # 12% límite de pérdida diaria (más conservador)
         'adaptive_mode': True  # Modo adaptativo
     }
     
