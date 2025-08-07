@@ -330,23 +330,32 @@ class MinimalTradingBot:
         
         # Bucle principal optimizado
         cycle_count = 0
-        while self.is_running:
-            try:
-                cycle_count += 1
-                self.logger.info(f"🔄 Iniciando ciclo {cycle_count}...")
-                self.run_trading_cycle()
-                self.logger.info(f"✅ Ciclo {cycle_count} completado, esperando 120s...")
-                # Intervalo más largo para estabilidad
-                time.sleep(120)  # 2 minutos
-                
-            except KeyboardInterrupt:
-                self.logger.info("🛑 Bot detenido por usuario")
-                break
-            except Exception as e:
-                self.logger.error(f"❌ Error en bucle principal: {e}")
-                import traceback
-                self.logger.error(f"📋 Traceback: {traceback.format_exc()}")
-                time.sleep(60)  # Esperar 1 minuto antes de reintentar
+        self.logger.info("🔄 Entrando al bucle principal...")
+        
+        try:
+            while self.is_running:
+                try:
+                    cycle_count += 1
+                    self.logger.info(f"🔄 Iniciando ciclo {cycle_count}...")
+                    self.run_trading_cycle()
+                    self.logger.info(f"✅ Ciclo {cycle_count} completado, esperando 120s...")
+                    # Intervalo más largo para estabilidad
+                    time.sleep(120)  # 2 minutos
+                    
+                except KeyboardInterrupt:
+                    self.logger.info("🛑 Bot detenido por usuario")
+                    break
+                except Exception as e:
+                    self.logger.error(f"❌ Error en ciclo {cycle_count}: {e}")
+                    import traceback
+                    self.logger.error(f"📋 Traceback: {traceback.format_exc()}")
+                    time.sleep(60)  # Esperar 1 minuto antes de reintentar
+                    
+        except Exception as e:
+            self.logger.error(f"❌ Error fatal en bucle principal: {e}")
+            import traceback
+            self.logger.error(f"📋 Traceback fatal: {traceback.format_exc()}")
+            raise
 
 def main():
     """Función principal"""
@@ -355,9 +364,13 @@ def main():
     
     try:
         bot = MinimalTradingBot()
+        print("✅ Bot creado exitosamente")
+        print("🚀 Iniciando bot...")
         bot.start()
     except Exception as e:
         print(f"❌ Error iniciando bot: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
