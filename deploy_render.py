@@ -32,20 +32,24 @@ class RenderDeployment:
     def __init__(self):
         self.bot_process = None
         self.restart_count = 0
-        self.max_restarts = 50  # Más reinicios para Render
+        # Configuración para plan gratuito
+        self.max_restarts = 10  # Reducir reinicios máximos
+        self.restart_delay = 30  # Esperar 30 segundos entre reinicios
+        self.health_check_interval = 300  # Verificar cada 5 minutos
         self.is_running = True
         
     def start_bot(self):
-        """Iniciar el bot de trading"""
+        """Iniciar el bot de trading optimizado para plan gratuito"""
         try:
-            logging.info("🚀 Iniciando bot mínimo funcional en Render...")
+            logging.info("🚀 Iniciando bot mínimo funcional optimizado...")
             
             # Configuraciones específicas para plan gratuito
-            logging.info("📋 Configuraciones para plan gratuito:")
+            logging.info("📋 Configuraciones optimizadas para plan gratuito:")
             logging.info("  • Bot mínimo sin dependencias problemáticas")
-            logging.info("  • Simulación de trading")
-            logging.info("  • Alertas Telegram")
-            logging.info("  • Logging optimizado")
+            logging.info("  • Simulación estable con menos frecuencia")
+            logging.info("  • Alertas Telegram reducidas")
+            logging.info("  • Ciclos más largos (120s)")
+            logging.info("  • Manejo graceful de señales")
             
             # Comando para ejecutar el bot mínimo
             cmd = [
@@ -59,6 +63,7 @@ class RenderDeployment:
             env['RENDER_FREE_TIER'] = 'true'
             env['PYTHONUNBUFFERED'] = '1'
             env['PYTHONDONTWRITEBYTECODE'] = '1'
+            env['PYTHONHASHSEED'] = 'random'
             
             self.bot_process = subprocess.Popen(
                 cmd,
@@ -67,13 +72,14 @@ class RenderDeployment:
                 text=True,
                 bufsize=1,
                 universal_newlines=True,
-                env=env
+                env=env,
+                preexec_fn=os.setsid  # Crear nuevo grupo de procesos
             )
             
             logging.info(f"✅ Bot iniciado con PID: {self.bot_process.pid}")
             
             # Esperar más tiempo para plan gratuito
-            time.sleep(15)
+            time.sleep(20)
             
             # Verificar si el proceso sigue ejecutándose
             if self.bot_process.poll() is None:
