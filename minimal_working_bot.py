@@ -75,7 +75,8 @@ class GoogleSheetsLogger:
             
             # Abrir o crear spreadsheet
             try:
-                spreadsheet = self.client.open(self.spreadsheet_name)
+                # Usar ID específico del spreadsheet existente
+                spreadsheet = self.client.open_by_key("1aks2jTMCacJ5rdigtolhHB3JiSw5B8rWDHYT_rjk69U")
             except gspread.SpreadsheetNotFound:
                 spreadsheet = self.client.create(self.spreadsheet_name)
                 self.logger.info(f"✅ Spreadsheet creado: {self.spreadsheet_name}")
