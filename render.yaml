@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: trading-bot-survivor
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 deploy_render.py
+    envVars:
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_SECRET_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_SHEETS_CREDENTIALS
+        sync: false
+    healthCheckPath: /health
+    autoDeploy: true
+    region: oregon
+    plan: starter
+    numInstances: 1
+    scaling:
+      minInstances: 1
+      maxInstances: 1
+    cronJobs:
+      - name: daily-evaluation
+        schedule: "0 0 * * *"
+        command: python3 daily_evaluation.py 
