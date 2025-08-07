@@ -3,7 +3,7 @@
 Estrategias de trading con validación y gestión de riesgo
 """
 
-import pandas as pd
+# import pandas as pd  # Removido para compatibilidad con plan gratuito
 import numpy as np
 import logging
 from datetime import datetime, timedelta

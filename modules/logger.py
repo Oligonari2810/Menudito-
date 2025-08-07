@@ -8,7 +8,7 @@ import logging
 import os
 from datetime import datetime
 from typing import Dict, List, Optional
-import pandas as pd
+# import pandas as pd  # Removido para compatibilidad con plan gratuito
 from modules.config import TradingConfig
 
 class TradingLogger:
@@ -140,32 +140,28 @@ class TradingLogger:
         """Obtener historial de operaciones desde memoria"""
         return self.trades_history.copy()
     
-    def get_trades_dataframe(self) -> Optional[pd.DataFrame]:
-        """Obtener datos como DataFrame"""
+    def get_trades_dataframe(self) -> Optional[Dict]:
+        """Obtener datos como diccionario (sin pandas)"""
         try:
             if not self.trades_history:
                 return None
             
-            # Convertir a DataFrame
-            df = pd.DataFrame(self.trades_history)
-            
-            # Convertir timestamp si existe
-            if 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                df['date'] = df['timestamp'].dt.date
-                df['time'] = df['timestamp'].dt.time
-            
-            return df
+            # Retornar como diccionario simple
+            return {
+                'trades': self.trades_history,
+                'count': len(self.trades_history),
+                'total_trades': len(self.trades_history)
+            }
             
         except Exception as e:
-            self.logger.error(f"Error creando DataFrame: {e}")
+            self.logger.error(f"Error procesando historial: {e}")
             return None
     
     def generate_daily_summary(self) -> Dict:
         """Generar resumen diario"""
         try:
-            df = self.get_trades_dataframe()
-            if df is None or df.empty:
+            trades_data = self.get_trades_dataframe()
+            if trades_data is None or not trades_data['trades']:
                 return {
                     'total_trades': 0,
                     'total_pnl': 0.0,
@@ -175,12 +171,14 @@ class TradingLogger:
             
             # Filtrar por fecha actual
             today = datetime.now().date()
-            if 'date' in df.columns:
-                today_trades = df[df['date'] == today]
-            else:
-                today_trades = df
+            today_trades = []
+            for trade in trades_data['trades']:
+                if 'timestamp' in trade:
+                    trade_date = datetime.fromisoformat(trade['timestamp']).date()
+                    if trade_date == today:
+                        today_trades.append(trade)
             
-            if today_trades.empty:
+            if not today_trades:
                 return {
                     'total_trades': 0,
                     'total_pnl': 0.0,
@@ -190,8 +188,8 @@ class TradingLogger:
             
             # Calcular métricas
             total_trades = len(today_trades)
-            total_pnl = today_trades['pnl'].sum()
-            winning_trades = len(today_trades[today_trades['pnl'] > 0])
+            total_pnl = sum(trade.get('pnl', 0) for trade in today_trades)
+            winning_trades = len([t for t in today_trades if t.get('pnl', 0) > 0])
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
             avg_pnl = total_pnl / total_trades if total_trades > 0 else 0
             
@@ -214,8 +212,8 @@ class TradingLogger:
     def generate_performance_report(self) -> Dict:
         """Generar reporte de rendimiento completo"""
         try:
-            df = self.get_trades_dataframe()
-            if df is None or df.empty:
+            trades_data = self.get_trades_dataframe()
+            if trades_data is None or not trades_data['trades']:
                 return {
                     'total_trades': 0,
                     'total_pnl': 0.0,
@@ -227,16 +225,19 @@ class TradingLogger:
                     'trades_by_direction': {}
                 }
             
+            trades = trades_data['trades']
+            
             # Métricas básicas
-            total_trades = len(df)
-            total_pnl = df['pnl'].sum()
-            winning_trades = len(df[df['pnl'] > 0])
+            total_trades = len(trades)
+            total_pnl = sum(trade.get('pnl', 0) for trade in trades)
+            winning_trades = len([t for t in trades if t.get('pnl', 0) > 0])
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
             avg_pnl = total_pnl / total_trades if total_trades > 0 else 0
             
             # Mejor y peor operación
-            best_trade = df['pnl'].max() if not df.empty else 0
-            worst_trade = df['pnl'].min() if not df.empty else 0
+            pnls = [trade.get('pnl', 0) for trade in trades]
+            best_trade = max(pnls) if pnls else 0
+            worst_trade = min(pnls) if pnls else 0
             
             # Operaciones por estrategia
             trades_by_strategy = df['strategy'].value_counts().to_dict() if 'strategy' in df.columns else {}

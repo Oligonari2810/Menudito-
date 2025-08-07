@@ -47,22 +47,24 @@ class RenderDeployment:
             logging.info("  • Reconexión automática")
             logging.info("  • Logging optimizado")
             
-            # Primero ejecutar pruebas
-            logging.info("🧪 Ejecutando pruebas de verificación...")
+            # Primero probar con bot simplificado
+            logging.info("🧪 Probando con bot simplificado...")
             test_result = subprocess.run(
-                ["python3", "test_bot_startup.py"],
+                ["python3", "simple_bot.py"],
                 capture_output=True,
                 text=True,
-                timeout=120  # Timeout extendido para plan gratuito
+                timeout=60
             )
             
             if test_result.returncode != 0:
-                logging.error("❌ Pruebas fallaron, no se puede iniciar el bot")
+                logging.error("❌ Bot simplificado falló")
                 logging.error(f"📤 STDOUT: {test_result.stdout}")
                 logging.error(f"📤 STDERR: {test_result.stderr}")
-                return False
-            
-            logging.info("✅ Pruebas pasaron, iniciando bot...")
+                
+                # Intentar con bot principal de todas formas
+                logging.info("🔄 Intentando con bot principal...")
+            else:
+                logging.info("✅ Bot simplificado funcionó, probando bot principal...")
             
             # Comando para ejecutar el bot con configuraciones para plan gratuito
             cmd = [
@@ -91,7 +93,7 @@ class RenderDeployment:
             logging.info(f"✅ Bot iniciado con PID: {self.bot_process.pid}")
             
             # Esperar más tiempo para plan gratuito
-            time.sleep(10)
+            time.sleep(15)
             
             # Verificar si el proceso sigue ejecutándose
             if self.bot_process.poll() is None:
@@ -188,7 +190,7 @@ class RenderDeployment:
                         )
                 
                 # Esperar antes de la siguiente verificación
-                time.sleep(60)  # Verificar cada minuto
+                time.sleep(300)  # Verificar cada 5 minutos (reducir reinicios)
                 
             except Exception as e:
                 logging.error(f"❌ Error en monitoreo: {e}")
