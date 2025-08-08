@@ -731,9 +731,13 @@ class ProfessionalTradingBot:
                 pnl_gross = position_data['size'] * (sl_tp_data['sl_price'] - entry_price) / entry_price
                 result = 'PÉRDIDA'
             
-            # Calcular P&L neto de fees
+            # Calcular P&L neto de fees con mayor precisión
             total_fees = position_data['fees'] * 2  # Entrada y salida
             pnl_net = pnl_gross - total_fees
+            
+            # Asegurar que el P&L neto sea visible incluso si es pequeño
+            if abs(pnl_net) < 0.01 and pnl_net != 0:
+                pnl_net = -0.01 if pnl_net < 0 else 0.01
             
             # Actualizar capital
             new_capital = self.current_capital + pnl_net
@@ -781,7 +785,7 @@ class ProfessionalTradingBot:
 💰 Trade: {direction} BTCUSDT
 💵 Precio: ${entry_price:,.2f}
 📊 Resultado: {result}
-💸 P&L: ${pnl_net:.2f}
+💸 P&L: ${pnl_net:.3f}
 🏦 Capital: ${new_capital:.2f}
 
 📈 Métricas:
