@@ -1,9 +1,9 @@
 # 🤖 Trading Bot Survivor - $50 → $1000
 
-## 🚀 **Bot de Trading Autónomo Desplegado en Render**
+## 🚀 **Bot de Trading Autónomo como Worker en Render**
 
 ### ✅ **Estado Actual:**
-- **URL**: https://menudito-trading-bot.onrender.com
+- **Deployment**: Worker (sin servicio web)
 - **Status**: ✅ Funcionando 24/7
 - **Telegram**: ✅ Alertas en tiempo real
 - **Capital**: $55.58 (+11.16% desde $50)

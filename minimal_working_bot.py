@@ -11,9 +11,9 @@ import signal
 import random
 import argparse
 import sys
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-from decimal import Decimal, getcontext
+from datetime import datetime
+from typing import Dict, List
+from decimal import getcontext
 import requests
 
 # Configurar precisión decimal
@@ -25,19 +25,25 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# Variable global para control de apagado
-shutdown_flag = False
+# Variable global para control de apagado (mutable)
+shutdown_state = {"stop": False}
 
 def handle_shutdown_signal(signum, frame):
     """Manejar señales de apagado de manera limpia"""
-    global shutdown_flag
     signal_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
     logging.info(f"🛑 {signal_name} recibido → Iniciando apagado limpio...")
-    shutdown_flag = True
+    shutdown_state["stop"] = True
 
 # Configurar señales
 signal.signal(signal.SIGTERM, handle_shutdown_signal)
 signal.signal(signal.SIGINT, handle_shutdown_signal)
+
+def sleep_responsive(seconds: int):
+    """Dormir en bloques de 1s, saliendo en <1s si llega señal de apagado"""
+    remaining = int(seconds)
+    while remaining > 0 and not shutdown_state["stop"]:
+        time.sleep(1)
+        remaining -= 1
 
 class SafetyManager:
     """Sistema de gestión de seguridad y protecciones"""
@@ -86,7 +92,8 @@ class SafetyManager:
                 'intraday_drawdown': self.intraday_drawdown,
                 'consecutive_losses': self.consecutive_losses,
                 'probation_mode': self.probation_mode,
-                'racha_cooldown_active': self.racha_cooldown_start is not None
+                'racha_cooldown_active': self.racha_cooldown_start is not None,
+                'hourly_trades': self.hourly_trades
             }
             
             # Kill switches
@@ -197,6 +204,7 @@ class MarketFilter:
         self.atr_period = 14
         self.atr_timeframe = "1m"
         self.atr_percentile_min = 40
+        self.atr_percentile_max = 50
         self.ema_period = 50
         self.ema_timeframe = "1m"
         self.spread_max = 0.03  # 0.03% base
@@ -204,7 +212,8 @@ class MarketFilter:
         
         # Configuración adaptativa
         self.spread_adaptive_on = True
-        self.spread_adaptive_threshold = 0.04  # Subir a 0.04-0.05% si necesario
+        self.spread_adaptive_threshold = 0.05  # Subir a 0.04-0.05% si necesario
+        self.spread_epsilon = 0.00001
         self.maker_only_enabled = True
         
     def check_market_conditions(self, price: float, volume: float) -> Dict:
@@ -225,6 +234,7 @@ class MarketFilter:
             filter_status = {
                 'can_trade': True,
                 'reason': None,
+                'reason_code': None,
                 'atr': atr_value,
                 'ema': ema_value,
                 'spread': spread_value,
@@ -232,10 +242,12 @@ class MarketFilter:
                 'spread_adaptive': self.spread_adaptive_on
             }
             
-            # Filtro ATR (volatilidad mínima)
-            if atr_value < 0.4:  # ATR mínimo
+            # Filtro ATR (volatilidad mínima) con umbral dinámico 40–50%
+            atr_min_dynamic = 0.40 + (0.10 * random.random())  # 0.40–0.50
+            if atr_value < atr_min_dynamic:
                 filter_status['can_trade'] = False
-                filter_status['reason'] = f"Volatilidad insuficiente: ATR={atr_value:.3f}"
+                filter_status['reason'] = f"Volatilidad insuficiente: ATR={atr_value:.3f} (<{atr_min_dynamic:.3f})"
+                filter_status['reason_code'] = 'low_vol'
             
             # Filtro EMA50 (tendencia)
             if price > ema_value:
@@ -243,10 +255,11 @@ class MarketFilter:
             else:
                 filter_status['direction'] = 'SELL'
             
-            # Filtro spread adaptativo
-            if spread_value > current_spread_max:
+            # Filtro spread adaptativo con tolerancia epsilon
+            if (spread_value - current_spread_max) > self.spread_epsilon:
                 filter_status['can_trade'] = False
                 filter_status['reason'] = f"Spread alto: {spread_value:.3f}% (máx: {current_spread_max:.3f}%)"
+                filter_status['reason_code'] = 'spread_high'
             
             return filter_status
             
@@ -288,7 +301,7 @@ class PositionManager:
         self.position_size_usd_min = 2.00  # Mínimo $2 USD
         self.enable_maker_only = True  # Solo órdenes maker
         self.spread_adaptive_on = True  # Spread adaptativo
-        self.enable_parallel_pairs = ["ETHUSDT"]  # Pairs adicionales
+        self.enable_parallel_pairs = []  # Solo BNBUSDT
         
     def calculate_position_size(self, capital: float, atr_value: float) -> Dict:
         """Calcular tamaño de posición basado en ATR"""
@@ -562,7 +575,7 @@ class GoogleSheetsLogger:
             # Crear fila de datos
             row_data = [
                 date_str,  # Fecha/Hora
-                trade_data.get('symbol', 'BTCUSDT'),  # Símbolo
+                trade_data.get('symbol', 'BNBUSDT'),  # Símbolo
                 trade_data.get('direction', ''),  # Dirección
                 f"${trade_data.get('entry_price', 0):,.2f}",  # Precio
                 f"{trade_data.get('size', 0):.6f}",  # Cantidad
@@ -740,7 +753,7 @@ class ProfessionalTradingBot:
         self.telemetry_manager = TelemetryManager(self)
         
         # Configuración de trading
-        self.update_interval = 180  # 3 minutos (vs 60s anterior)
+        self.update_interval = 180  # 3 minutos (configurable)
         self.session_start_time = datetime.now()
         
         # Configurar señales de interrupción
@@ -784,11 +797,6 @@ class ProfessionalTradingBot:
         self.send_telegram_message(startup_message)
         self.logger.info("✅ Bot profesional - FASE 1.5 PATCHED iniciado correctamente")
     
-    def handle_shutdown(self, signum, frame):
-        """Manejar señal de interrupción (legacy)"""
-        self.logger.info("🛑 Señal de interrupción recibida, cerrando bot...")
-        self.running = False
-    
     def send_telegram_message(self, message: str):
         """Enviar mensaje a Telegram"""
         try:
@@ -817,16 +825,16 @@ class ProfessionalTradingBot:
     def simulate_trading_signal(self) -> Dict:
         """Simular señal de trading con filtros de mercado"""
         try:
-            # Simular precio actual
-            current_price = random.uniform(110000, 120000)
+            # Simular precio actual (BNB/USDT)
+            current_price = random.uniform(500, 650)
             volume = random.uniform(1000, 5000)
             
             # Verificar condiciones de mercado
             market_conditions = self.market_filter.check_market_conditions(current_price, volume)
             
             if not market_conditions['can_trade']:
-                # Registrar motivo de rechazo
-                self.telemetry_manager.record_rejection(market_conditions['reason'])
+                # Registrar motivo de rechazo con código
+                self.telemetry_manager.record_rejection(market_conditions.get('reason_code', 'other'))
                 return {
                     'signal': 'REJECTED',
                     'reason': market_conditions['reason'],
@@ -895,6 +903,11 @@ class ProfessionalTradingBot:
             # Calcular tamaño de posición
             position_data = self.position_manager.calculate_position_size(self.current_capital, atr_value)
             
+            # Aplicar reducción de tamaño en modo probation (-50%)
+            if safety_status.get('probation_mode', False):
+                position_data['size'] = max(self.position_manager.position_size_usd_min, position_data['size'] * 0.5)
+                position_data['fees'] = position_data['size'] * self.position_manager.fee_rate
+            
             # Calcular SL/TP
             sl_tp_data = self.position_manager.calculate_sl_tp(entry_price, direction, atr_value)
             
@@ -930,7 +943,7 @@ class ProfessionalTradingBot:
             # Crear datos del trade
             trade_data = {
                 'timestamp': datetime.now().isoformat(),
-                'symbol': 'BTCUSDT',
+                'symbol': 'BNBUSDT',
                 'direction': direction,
                 'entry_price': entry_price,
                 'size': position_data['size'],
@@ -963,7 +976,7 @@ class ProfessionalTradingBot:
             telegram_message = f"""
 🤖 BOT PROFESIONAL - FASE 1.5 PATCHED
 
-💰 Trade: {direction} BTCUSDT
+💰 Trade: {direction} BNBUSDT
 💵 Precio: ${entry_price:,.2f}
 📊 Resultado: {result}
 💸 P&L: ${pnl_net:.3f}
@@ -1031,7 +1044,7 @@ class ProfessionalTradingBot:
             # Resetear contadores horarios cada hora
             last_hourly_reset = datetime.now()
             
-            while not shutdown_flag and self.running:
+            while not shutdown_state["stop"] and self.running:
                 try:
                     # Resetear contadores horarios
                     current_time = datetime.now()
@@ -1043,17 +1056,14 @@ class ProfessionalTradingBot:
                     self.run_trading_cycle()
                     
                     # Esperar intervalo con verificación de apagado
-                    for _ in range(self.update_interval):
-                        if shutdown_flag:
-                            break
-                        time.sleep(1)
+                    sleep_responsive(self.update_interval)
                     
                 except KeyboardInterrupt:
                     self.logger.info("🛑 Interrupción manual recibida")
                     break
                 except Exception as e:
                     self.logger.error(f"❌ Error en bucle principal: {e}")
-                    time.sleep(60)  # Esperar 1 minuto antes de reintentar
+                    sleep_responsive(60)  # Esperar antes de reintentar, pero de forma responsiva
             
             # Apagado limpio
             self.save_state_and_close()
@@ -1093,20 +1103,49 @@ class ProfessionalTradingBot:
                     'final_pnl': self.current_capital - 50.0,
                     'win_rate': final_metrics.get('win_rate', 0),
                     'profit_factor': self.metrics_tracker.get_profit_factor_display(),
-                    'drawdown': final_metrics.get('drawdown', 0)
+                    'drawdown': final_metrics.get('drawdown', 0),
+                    'symbol': 'BNBUSDT'
                 }
                 self.sheets_logger.log_trade(final_data, final_metrics)
+            
+            # Guardar resumen local CSV
+            try:
+                import csv
+                summary_path = os.path.join(self.local_logger.data_dir, 'session_summary.csv')
+                file_exists = os.path.exists(summary_path)
+                with open(summary_path, 'a', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+                    if not file_exists:
+                        writer.writerow([
+                            'timestamp', 'cycles_executed', 'final_capital', 'final_pnl',
+                            'win_rate', 'profit_factor', 'drawdown', 'symbol'
+                        ])
+                    writer.writerow([
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        self.cycle_count,
+                        f"{self.current_capital:.2f}",
+                        f"{(self.current_capital - 50.0):.2f}",
+                        f"{final_metrics.get('win_rate', 0):.2f}",
+                        self.metrics_tracker.get_profit_factor_display(),
+                        f"{final_metrics.get('drawdown', 0):.2f}",
+                        'BNBUSDT'
+                    ])
+                self.logger.info("✅ Resumen de sesión guardado en CSV")
+            except Exception as e:
+                self.logger.warning(f"⚠️ No se pudo guardar resumen CSV: {e}")
+            
+            # Cerrar conexiones (si existieran)
+            try:
+                if hasattr(self, 'binance_client') and self.binance_client:
+                    self.binance_client.close_connection()
+            except Exception:
+                pass
             
             self.logger.info("✅ Estado guardado correctamente")
             
         except Exception as e:
             self.logger.error(f"❌ Error guardando estado: {e}")
     
-    def handle_shutdown(self, signum, frame):
-        """Manejar señal de interrupción (legacy)"""
-        self.logger.info("🛑 Señal de interrupción recibida, cerrando bot...")
-        self.running = False
-
 class TelemetryManager:
     """Sistema de telemetría y alertas"""
     
@@ -1285,9 +1324,9 @@ def main():
             logging.error(f"❌ Error en ejecución: {e}")
         finally:
             # Asegurar apagado limpio
-            if not shutdown_flag:
+            if not shutdown_state["stop"]:
                 logging.info("🛑 Iniciando apagado limpio...")
-                shutdown_flag = True
+                shutdown_state["stop"] = True
             
             logging.info("✅ Bot terminado correctamente")
             sys.exit(0)
