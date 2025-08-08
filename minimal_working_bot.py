@@ -9,6 +9,8 @@ import time
 import logging
 import signal
 import random
+import argparse
+import sys
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from decimal import Decimal, getcontext
@@ -22,6 +24,20 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+# Variable global para control de apagado
+shutdown_flag = False
+
+def handle_shutdown_signal(signum, frame):
+    """Manejar señales de apagado de manera limpia"""
+    global shutdown_flag
+    signal_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
+    logging.info(f"🛑 {signal_name} recibido → Iniciando apagado limpio...")
+    shutdown_flag = True
+
+# Configurar señales
+signal.signal(signal.SIGTERM, handle_shutdown_signal)
+signal.signal(signal.SIGINT, handle_shutdown_signal)
 
 class SafetyManager:
     """Sistema de gestión de seguridad y protecciones"""
@@ -702,8 +718,8 @@ class ProfessionalTradingBot:
         self.session_start_time = datetime.now()
         
         # Configurar señales de interrupción
-        signal.signal(signal.SIGINT, self.handle_shutdown)
-        signal.signal(signal.SIGTERM, self.handle_shutdown)
+        # signal.signal(signal.SIGINT, self.handle_shutdown) # Moved to top
+        # signal.signal(signal.SIGTERM, self.handle_shutdown) # Moved to top
         
         self.logger.info("🤖 BOT:")
         self.logger.info("✅ Sistema de métricas inicializado")
@@ -736,7 +752,7 @@ class ProfessionalTradingBot:
         self.logger.info("✅ Bot profesional - FASE 1.5 PATCHED iniciado correctamente")
     
     def handle_shutdown(self, signum, frame):
-        """Manejar señal de interrupción"""
+        """Manejar señal de interrupción (legacy)"""
         self.logger.info("🛑 Señal de interrupción recibida, cerrando bot...")
         self.running = False
     
@@ -982,7 +998,7 @@ class ProfessionalTradingBot:
             # Resetear contadores horarios cada hora
             last_hourly_reset = datetime.now()
             
-            while self.running:
+            while not shutdown_flag and self.running:
                 try:
                     # Resetear contadores horarios
                     current_time = datetime.now()
@@ -993,8 +1009,11 @@ class ProfessionalTradingBot:
                     # Ejecutar ciclo
                     self.run_trading_cycle()
                     
-                    # Esperar intervalo
-                    time.sleep(self.update_interval)
+                    # Esperar intervalo con verificación de apagado
+                    for _ in range(self.update_interval):
+                        if shutdown_flag:
+                            break
+                        time.sleep(1)
                     
                 except KeyboardInterrupt:
                     self.logger.info("🛑 Interrupción manual recibida")
@@ -1002,6 +1021,9 @@ class ProfessionalTradingBot:
                 except Exception as e:
                     self.logger.error(f"❌ Error en bucle principal: {e}")
                     time.sleep(60)  # Esperar 1 minuto antes de reintentar
+            
+            # Apagado limpio
+            self.save_state_and_close()
             
             # Mensaje de cierre
             final_message = f"""
@@ -1019,6 +1041,38 @@ class ProfessionalTradingBot:
             
         except Exception as e:
             self.logger.error(f"❌ Error iniciando bot: {e}")
+    
+    def save_state_and_close(self):
+        """Guardar estado y cerrar conexiones"""
+        try:
+            self.logger.info("💾 Guardando estado...")
+            
+            # Guardar métricas finales
+            final_metrics = self.metrics_tracker.get_metrics_summary()
+            
+            # Log final a Google Sheets
+            if self.sheets_logger.sheets_enabled:
+                final_data = {
+                    'timestamp': datetime.now().isoformat(),
+                    'event': 'BOT_SHUTDOWN',
+                    'cycles_executed': self.cycle_count,
+                    'final_capital': self.current_capital,
+                    'final_pnl': self.current_capital - 50.0,
+                    'win_rate': final_metrics.get('win_rate', 0),
+                    'profit_factor': self.metrics_tracker.get_profit_factor_display(),
+                    'drawdown': final_metrics.get('drawdown', 0)
+                }
+                self.sheets_logger.log_trade(final_data, final_metrics)
+            
+            self.logger.info("✅ Estado guardado correctamente")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error guardando estado: {e}")
+    
+    def handle_shutdown(self, signum, frame):
+        """Manejar señal de interrupción (legacy)"""
+        self.logger.info("🛑 Señal de interrupción recibida, cerrando bot...")
+        self.running = False
 
 class TelemetryManager:
     """Sistema de telemetría y alertas"""
@@ -1168,25 +1222,45 @@ class TelemetryManager:
             self.logger.error(f"❌ Error enviando alerta crítica: {e}")
 
 def main():
-    """Función principal - FASE 1: MÉTRICAS"""
-    print("🤖 BOT PROFESIONAL - FASE 1: MÉTRICAS")
-    print("=" * 50)
-    print("📊 Sistema de métricas implementado")
-    print("📈 Win Rate, Profit Factor, Drawdown")
-    print("📊 Google Sheets con métricas")
-    print("📱 Alertas Telegram con métricas")
-    print("=" * 50)
-    
+    """Función principal - FASE 1.5 PATCHED"""
     try:
+        # Parsear argumentos
+        parser = argparse.ArgumentParser(description='Trading Bot Profesional - FASE 1.5 PATCHED')
+        parser.add_argument('--mode', default='testnet', choices=['testnet', 'live'], 
+                          help='Modo de operación (testnet/live)')
+        parser.add_argument('--config', default='config_survivor_final.py',
+                          help='Archivo de configuración')
+        parser.add_argument('--strategy', default='breakout',
+                          help='Estrategia de trading')
+        
+        args = parser.parse_args()
+        
+        # Configurar logging
+        logging.info(f"🚀 Iniciando Trading Bot - FASE 1.5 PATCHED")
+        logging.info(f"📊 Modo: {args.mode}")
+        logging.info(f"⚙️ Configuración: {args.config}")
+        logging.info(f"🎯 Estrategia: {args.strategy}")
+        
+        # Crear y ejecutar bot
         bot = ProfessionalTradingBot()
-        print("✅ Bot creado exitosamente con métricas")
-        print("🚀 Iniciando bot - FASE 1...")
-        bot.start()
+        
+        try:
+            bot.start()
+        except KeyboardInterrupt:
+            logging.info("🛑 Interrupción manual recibida")
+        except Exception as e:
+            logging.error(f"❌ Error en ejecución: {e}")
+        finally:
+            # Asegurar apagado limpio
+            if not shutdown_flag:
+                logging.info("🛑 Iniciando apagado limpio...")
+                shutdown_flag = True
+            
+            logging.info("✅ Bot terminado correctamente")
+            sys.exit(0)
+            
     except Exception as e:
-        print(f"❌ Error iniciando bot: {e}")
-        import traceback
-        traceback.print_exc()
-        import sys
+        logging.error(f"❌ Error crítico: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

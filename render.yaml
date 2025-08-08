@@ -1,33 +1,25 @@
 services:
-  - type: web
-    name: trading-bot-survivor
+  - type: worker
+    name: menudito-trading-bot
     env: python
-    buildCommand: chmod +x build.sh && ./build.sh
-    startCommand: python3 deploy_render.py
+    plan: starter
+    autoDeploy: true
+    region: oregon
+    buildCommand: |
+      pip install -r requirements.txt
+    startCommand: |
+      python minimal_working_bot.py --mode=testnet
     envVars:
-      - key: BINANCE_API_KEY
-        sync: false
-      - key: BINANCE_SECRET_KEY
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: LOG_LEVEL
+        value: "INFO"
+      - key: GOOGLE_SHEETS_CREDENTIALS
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: GOOGLE_SHEETS_CREDENTIALS
-        sync: false
-      - key: PYTHON_VERSION
-        value: "3.9.18"
-    healthCheckPath: /health
-    autoDeploy: true
-    region: oregon
-    plan: starter
-    numInstances: 1
-    scaling:
-      minInstances: 1
-      maxInstances: 1
-    cronJobs:
-      - name: daily-evaluation
-        schedule: "0 0 * * *"
-        command: python3 daily_evaluation.py 
+    healthCheckPath: ""
+    runtime:
+      shutdownGracePeriodSeconds: 60 
