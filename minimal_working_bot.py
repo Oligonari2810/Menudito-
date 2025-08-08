@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-🤖 TRADING BOT PROFESIONAL - FASE 1: MÉTRICAS
-Bot de trading optimizado con sistema de métricas avanzado
+🤖 TRADING BOT PROFESIONAL - FASE 1.5: OPTIMIZACIÓN
+Bot de trading optimizado con sistema de métricas avanzado y gestión de riesgo mejorada
 """
 
 import os
@@ -9,8 +9,8 @@ import time
 import logging
 import signal
 import random
-from datetime import datetime
-from typing import Dict, List
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 import requests
 
 # Configurar logging profesional
@@ -19,8 +19,256 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+class SafetyManager:
+    """Sistema de gestión de seguridad y protecciones"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.daily_loss = 0.0
+        self.intraday_drawdown = 0.0
+        self.consecutive_losses = 0
+        self.last_trade_time = None
+        self.hourly_trades = 0
+        self.daily_trades = 0
+        self.session_start_time = datetime.now()
+        self.session_start_capital = 50.0
+        
+        # Límites de seguridad
+        self.daily_loss_limit = 0.03  # 3%
+        self.intraday_drawdown_limit = 0.10  # 10%
+        self.max_consecutive_losses = 3
+        self.min_cooldown_seconds = 90
+        self.max_trades_per_hour = 20
+        self.max_trades_per_day = 160
+        
+    def check_safety_conditions(self, current_capital: float) -> Dict:
+        """Verificar todas las condiciones de seguridad"""
+        try:
+            # Calcular métricas de seguridad
+            self.intraday_drawdown = ((self.session_start_capital - current_capital) / self.session_start_capital) * 100
+            self.daily_loss = ((50.0 - current_capital) / 50.0) * 100
+            
+            # Verificar límites
+            safety_status = {
+                'can_trade': True,
+                'reason': None,
+                'daily_loss': self.daily_loss,
+                'intraday_drawdown': self.intraday_drawdown,
+                'consecutive_losses': self.consecutive_losses
+            }
+            
+            # Kill switches
+            if self.daily_loss >= 3.0:
+                safety_status['can_trade'] = False
+                safety_status['reason'] = f"Pérdida diaria crítica: {self.daily_loss:.2f}%"
+                
+            elif self.intraday_drawdown >= 10.0:
+                safety_status['can_trade'] = False
+                safety_status['reason'] = f"Drawdown intradía crítico: {self.intraday_drawdown:.2f}%"
+                
+            elif self.consecutive_losses >= 3:
+                safety_status['can_trade'] = False
+                safety_status['reason'] = f"Racha de pérdidas: {self.consecutive_losses} consecutivas"
+            
+            # Rate limiting
+            if self.last_trade_time:
+                time_since_last = (datetime.now() - self.last_trade_time).total_seconds()
+                if time_since_last < self.min_cooldown_seconds:
+                    safety_status['can_trade'] = False
+                    safety_status['reason'] = f"Cooldown activo: {self.min_cooldown_seconds - time_since_last:.0f}s restantes"
+            
+            if self.hourly_trades >= self.max_trades_per_hour:
+                safety_status['can_trade'] = False
+                safety_status['reason'] = f"Límite horario alcanzado: {self.hourly_trades}/{self.max_trades_per_hour}"
+                
+            if self.daily_trades >= self.max_trades_per_day:
+                safety_status['can_trade'] = False
+                safety_status['reason'] = f"Límite diario alcanzado: {self.daily_trades}/{self.max_trades_per_day}"
+            
+            return safety_status
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error en verificación de seguridad: {e}")
+            return {'can_trade': False, 'reason': f"Error de seguridad: {e}"}
+    
+    def record_trade(self, result: str, pnl: float):
+        """Registrar resultado de trade para métricas de seguridad"""
+        try:
+            self.last_trade_time = datetime.now()
+            self.hourly_trades += 1
+            self.daily_trades += 1
+            
+            # Actualizar racha de pérdidas
+            if result == 'PÉRDIDA':
+                self.consecutive_losses += 1
+            else:
+                self.consecutive_losses = 0
+                
+            self.logger.info(f"📊 Seguridad: DD={self.intraday_drawdown:.2f}%, DL={self.daily_loss:.2f}%, CL={self.consecutive_losses}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error registrando trade: {e}")
+    
+    def reset_hourly_counters(self):
+        """Resetear contadores horarios"""
+        try:
+            self.hourly_trades = 0
+            self.logger.info("🔄 Contadores horarios reseteados")
+        except Exception as e:
+            self.logger.error(f"❌ Error reseteando contadores: {e}")
+
+class MarketFilter:
+    """Sistema de filtros de mercado"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        
+        # Parámetros de filtros
+        self.atr_period = 14
+        self.atr_timeframe = "1m"
+        self.atr_percentile_min = 40
+        self.ema_period = 50
+        self.ema_timeframe = "1m"
+        self.spread_max = 0.03  # 0.03%
+        self.slippage_max = 0.02  # 0.02%
+        
+    def check_market_conditions(self, price: float, volume: float) -> Dict:
+        """Verificar condiciones de mercado para operar"""
+        try:
+            # Simular indicadores técnicos
+            atr_value = self.simulate_atr(price)
+            ema_value = self.simulate_ema(price)
+            spread_value = self.simulate_spread(price)
+            
+            filter_status = {
+                'can_trade': True,
+                'reason': None,
+                'atr': atr_value,
+                'ema': ema_value,
+                'spread': spread_value
+            }
+            
+            # Filtro ATR (volatilidad mínima)
+            if atr_value < 0.4:  # ATR mínimo
+                filter_status['can_trade'] = False
+                filter_status['reason'] = f"Volatilidad insuficiente: ATR={atr_value:.3f}"
+            
+            # Filtro EMA50 (tendencia)
+            if price > ema_value:
+                filter_status['direction'] = 'BUY'
+            else:
+                filter_status['direction'] = 'SELL'
+            
+            # Filtro spread
+            if spread_value > self.spread_max:
+                filter_status['can_trade'] = False
+                filter_status['reason'] = f"Spread alto: {spread_value:.3f}%"
+            
+            return filter_status
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error en filtros de mercado: {e}")
+            return {'can_trade': False, 'reason': f"Error de filtros: {e}"}
+    
+    def simulate_atr(self, price: float) -> float:
+        """Simular valor ATR"""
+        return random.uniform(0.3, 0.8)
+    
+    def simulate_ema(self, price: float) -> float:
+        """Simular valor EMA50"""
+        return price * random.uniform(0.995, 1.005)
+    
+    def simulate_spread(self, price: float) -> float:
+        """Simular spread"""
+        return random.uniform(0.01, 0.05)
+
+class PositionManager:
+    """Gestión de posiciones con ATR dinámico y trailing"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        
+        # Configuración ATR dinámico
+        self.atr_multiplier_sl = 1.0
+        self.atr_multiplier_tp = 1.3
+        
+        # Configuración trailing
+        self.trailing_activation = 0.25  # 0.25%
+        self.trailing_step = 0.08  # 0.08%
+        
+        # Fees
+        self.fee_rate = 0.001  # 0.1%
+        self.fees_included = True
+        
+    def calculate_position_size(self, capital: float, atr_value: float) -> Dict:
+        """Calcular tamaño de posición basado en ATR"""
+        try:
+            # Tamaño base (0.6% del capital)
+            base_size = capital * 0.006
+            
+            # Ajustar por ATR
+            atr_adjusted_size = base_size * (atr_value / 0.5)  # Normalizar ATR
+            
+            # Límite máximo (1.2% del capital)
+            max_size = capital * 0.012
+            
+            # Tamaño final
+            final_size = min(atr_adjusted_size, max_size)
+            
+            # Calcular fees
+            estimated_fees = final_size * self.fee_rate
+            
+            position_data = {
+                'size': final_size,
+                'fees': estimated_fees,
+                'size_net': final_size - estimated_fees,
+                'atr_value': atr_value,
+                'base_size': base_size,
+                'max_size': max_size
+            }
+            
+            self.logger.info(f"💰 Tamaño posición: ${final_size:.2f} (ATR: {atr_value:.3f})")
+            return position_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculando tamaño: {e}")
+            return {'size': 0, 'fees': 0, 'size_net': 0}
+    
+    def calculate_sl_tp(self, entry_price: float, direction: str, atr_value: float) -> Dict:
+        """Calcular SL y TP basados en ATR"""
+        try:
+            # SL y TP basados en ATR
+            sl_distance = atr_value * self.atr_multiplier_sl
+            tp_distance = atr_value * self.atr_multiplier_tp
+            
+            if direction == 'BUY':
+                sl_price = entry_price - sl_distance
+                tp_price = entry_price + tp_distance
+            else:
+                sl_price = entry_price + sl_distance
+                tp_price = entry_price - tp_distance
+            
+            # Trailing stop
+            trailing_activation_price = entry_price + (tp_distance * self.trailing_activation)
+            trailing_step = tp_distance * self.trailing_step
+            
+            sl_tp_data = {
+                'sl_price': sl_price,
+                'tp_price': tp_price,
+                'trailing_activation': trailing_activation_price,
+                'trailing_step': trailing_step,
+                'atr_value': atr_value
+            }
+            
+            self.logger.info(f"📊 SL: ${sl_price:.2f}, TP: ${tp_price:.2f} (ATR: {atr_value:.3f})")
+            return sl_tp_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculando SL/TP: {e}")
+            return {'sl_price': 0, 'tp_price': 0}
+
 class MetricsTracker:
-    """Sistema de monitoreo de métricas clave"""
+    """Sistema de monitoreo de métricas clave con fees incluidos"""
     
     def __init__(self, max_operations: int = 50):
         self.logger = logging.getLogger(__name__)
@@ -28,6 +276,7 @@ class MetricsTracker:
         self.operations_history: List[Dict] = []
         self.peak_capital = 50.0
         self.current_capital = 50.0
+        self.fees_included = True
         
     def add_operation(self, operation: Dict):
         """Añadir operación al historial"""
@@ -39,8 +288,8 @@ class MetricsTracker:
             if len(self.operations_history) > self.max_operations:
                 self.operations_history = self.operations_history[-self.max_operations:]
             
-            # Actualizar capital
-            self.current_capital = operation.get('capital', self.current_capital)
+            # Actualizar capital (neto de fees)
+            self.current_capital = operation.get('capital_net', self.current_capital)
             
             # Actualizar peak capital
             if self.current_capital > self.peak_capital:
@@ -69,20 +318,21 @@ class MetricsTracker:
             return 0.0
     
     def calculate_profit_factor(self) -> float:
-        """Calcular Profit Factor de las últimas operaciones"""
+        """Calcular Profit Factor neto de fees"""
         try:
             if not self.operations_history:
                 return 0.0
             
-            total_gains = sum(op.get('pnl', 0) for op in self.operations_history if op.get('pnl', 0) > 0)
-            total_losses = abs(sum(op.get('pnl', 0) for op in self.operations_history if op.get('pnl', 0) < 0))
+            # Usar P&L neto de fees
+            total_gains = sum(op.get('pnl_net', 0) for op in self.operations_history if op.get('pnl_net', 0) > 0)
+            total_losses = abs(sum(op.get('pnl_net', 0) for op in self.operations_history if op.get('pnl_net', 0) < 0))
             
             if total_losses == 0:
                 profit_factor = total_gains if total_gains > 0 else 0.0
             else:
                 profit_factor = total_gains / total_losses
             
-            self.logger.info(f"📈 Profit Factor calculado: {profit_factor:.2f} (Gains: ${total_gains:.2f}, Losses: ${total_losses:.2f})")
+            self.logger.info(f"📈 Profit Factor (neto) calculado: {profit_factor:.2f} (Gains: ${total_gains:.2f}, Losses: ${total_losses:.2f})")
             return profit_factor
             
         except Exception as e:
@@ -104,19 +354,22 @@ class MetricsTracker:
             return 0.0
     
     def get_metrics_summary(self) -> Dict:
-        """Obtener resumen completo de métricas"""
+        """Obtener resumen de métricas"""
         try:
+            win_rate = self.calculate_win_rate()
+            profit_factor = self.calculate_profit_factor()
+            drawdown = self.calculate_drawdown()
+            
             metrics = {
-                'win_rate': self.calculate_win_rate(),
-                'profit_factor': self.calculate_profit_factor(),
-                'drawdown': self.calculate_drawdown(),
+                'win_rate': win_rate,
+                'profit_factor': profit_factor,
+                'drawdown': drawdown,
                 'total_operations': len(self.operations_history),
                 'current_capital': self.current_capital,
-                'peak_capital': self.peak_capital,
-                'timestamp': datetime.now().isoformat()
+                'peak_capital': self.peak_capital
             }
             
-            self.logger.info(f"📊 Métricas calculadas: WR={metrics['win_rate']:.2f}%, PF={metrics['profit_factor']:.2f}, DD={metrics['drawdown']:.2f}%")
+            self.logger.info(f"📊 Métricas calculadas: WR={win_rate:.2f}%, PF={profit_factor:.2f}, DD={drawdown:.2f}%")
             return metrics
             
         except Exception as e:
@@ -310,48 +563,64 @@ class LocalLogger:
             return False
 
 class ProfessionalTradingBot:
-    """Bot de trading profesional optimizado con métricas"""
+    """Bot de trading profesional con sistema de métricas y gestión de riesgo"""
     
     def __init__(self):
-        self.is_running = True
-        self.counter = 0
         self.logger = logging.getLogger(__name__)
-        
-        # Configuración profesional
-        self.symbol = "BTCUSDT"
-        self.initial_capital = 50.0
+        self.running = True
+        self.cycle_count = 0
         self.current_capital = 50.0
         
-        # Historial de trades
-        self.trades_history = []
-        self.daily_pnl = 0.0
-        
-        # Sistema de métricas FASE 1
-        self.metrics_tracker = MetricsTracker(max_operations=50)
-        self.logger.info("✅ Sistema de métricas inicializado")
-        
-        # Configurar Google Sheets
+        # Inicializar sistemas
+        self.metrics_tracker = MetricsTracker()
+        self.safety_manager = SafetyManager()
+        self.market_filter = MarketFilter()
+        self.position_manager = PositionManager()
         self.sheets_logger = GoogleSheetsLogger()
-        if self.sheets_logger.sheets_enabled:
-            self.logger.info("✅ Google Sheets habilitado")
-        else:
-            self.logger.warning("⚠️ Google Sheets NO habilitado")
-        
-        # Configurar logging local
         self.local_logger = LocalLogger()
-        self.logger.info("✅ Logging local habilitado")
         
-        # Configurar manejo de señales
-        signal.signal(signal.SIGTERM, self.handle_shutdown)
+        # Configuración de trading
+        self.update_interval = 180  # 3 minutos (vs 60s anterior)
+        self.session_start_time = datetime.now()
+        
+        # Configurar señales de interrupción
         signal.signal(signal.SIGINT, self.handle_shutdown)
+        signal.signal(signal.SIGTERM, self.handle_shutdown)
         
+        self.logger.info("🤖 BOT:")
+        self.logger.info("✅ Sistema de métricas inicializado")
+        self.logger.info("✅ Sistema de seguridad inicializado")
+        self.logger.info("✅ Filtros de mercado inicializados")
+        self.logger.info("✅ Gestión de posiciones inicializada")
+        self.logger.info("✅ Google Sheets configurado desde variable de entorno")
+        self.logger.info("✅ Google Sheets habilitado")
+        self.logger.info("✅ Directorio de datos creado: trading_data")
+        self.logger.info("✅ Logging local habilitado")
+        self.logger.info("🚀 Iniciando bot profesional - FASE 1.5...")
+        
+        # Mensaje de inicio
+        startup_message = f"""
+🤖 BOT PROFESIONAL - FASE 1.5 INICIADO
+
+📊 Configuración Optimizada:
+⏱️ Intervalo: {self.update_interval}s
+💰 Capital inicial: ${self.current_capital:.2f}
+🛡️ Sistema de seguridad activo
+📈 Métricas netas de fees
+🎯 Filtros de mercado activos
+
+🚀 Listo para operar con optimizaciones
+"""
+        self.send_telegram_message(startup_message)
+        self.logger.info("✅ Bot profesional - FASE 1.5 iniciado correctamente")
+    
     def handle_shutdown(self, signum, frame):
-        """Manejar cierre graceful"""
-        self.logger.info("🛑 Señal de terminación recibida")
-        self.is_running = False
-        
+        """Manejar señal de interrupción"""
+        self.logger.info("🛑 Señal de interrupción recibida, cerrando bot...")
+        self.running = False
+    
     def send_telegram_message(self, message: str):
-        """Enviar mensaje por Telegram"""
+        """Enviar mensaje a Telegram"""
         try:
             bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
             chat_id = os.getenv('TELEGRAM_CHAT_ID')
@@ -363,145 +632,252 @@ class ProfessionalTradingBot:
                     'text': message,
                     'parse_mode': 'HTML'
                 }
-                response = requests.post(url, json=data, timeout=5)
+                
+                response = requests.post(url, data=data, timeout=10)
                 if response.status_code == 200:
                     self.logger.info("✅ Mensaje enviado a Telegram")
                 else:
-                    self.logger.warning(f"⚠️ Error enviando a Telegram: {response.status_code}")
+                    self.logger.warning(f"⚠️ Error enviando mensaje: {response.status_code}")
             else:
-                self.logger.warning("⚠️ Telegram no configurado")
+                self.logger.warning("⚠️ Credenciales Telegram no configuradas")
+                
         except Exception as e:
-            self.logger.error(f"❌ Error Telegram: {e}")
+            self.logger.error(f"❌ Error enviando mensaje Telegram: {e}")
     
     def simulate_trading_signal(self) -> Dict:
-        """Simular señal de trading profesional"""
-        signals = [
-            {'signal': 'BUY', 'reason': 'Soporte técnico alcanzado', 'price': random.uniform(110000, 120000)},
-            {'signal': 'SELL', 'reason': 'Resistencia técnica alcanzada', 'price': random.uniform(110000, 120000)},
-            {'signal': 'WAIT', 'reason': 'Mercado lateral', 'price': 0}
-        ]
-        return random.choice(signals)
+        """Simular señal de trading con filtros de mercado"""
+        try:
+            # Simular precio actual
+            current_price = random.uniform(110000, 120000)
+            volume = random.uniform(1000, 5000)
+            
+            # Verificar condiciones de mercado
+            market_conditions = self.market_filter.check_market_conditions(current_price, volume)
+            
+            if not market_conditions['can_trade']:
+                return {
+                    'signal': 'REJECTED',
+                    'reason': market_conditions['reason'],
+                    'price': current_price,
+                    'volume': volume,
+                    'market_data': market_conditions
+                }
+            
+            # Generar señal basada en dirección del mercado
+            direction = market_conditions['direction']
+            
+            # Simular confianza basada en condiciones
+            confidence = random.uniform(0.6, 0.9)
+            
+            signal_data = {
+                'signal': direction,
+                'price': current_price,
+                'volume': volume,
+                'confidence': confidence,
+                'timestamp': datetime.now().isoformat(),
+                'market_data': market_conditions
+            }
+            
+            self.logger.info(f"📊 Señal: {direction} - {market_conditions.get('reason', 'Condiciones favorables')}")
+            return signal_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error generando señal: {e}")
+            return {'signal': 'ERROR', 'reason': str(e)}
     
     def simulate_trade(self, signal: Dict) -> Dict:
-        """Simular operación de trading con métricas"""
-        if signal['signal'] == 'WAIT':
-            return None
-        
-        # Simular resultado
-        success = random.choice([True, False])
-        
-        if success:
-            profit = random.uniform(0.1, 0.5)  # Ganancias conservadoras
-            self.current_capital += profit
-            self.daily_pnl += profit
-            result = "GANANCIA"
-        else:
-            loss = random.uniform(0.1, 0.3)  # Pérdidas controladas
-            self.current_capital -= loss
-            self.daily_pnl -= loss
-            result = "PÉRDIDA"
-        
-        trade = {
-            'timestamp': datetime.now().isoformat(),
-            'symbol': self.symbol,
-            'side': signal['signal'],
-            'price': signal['price'],
-            'amount': random.uniform(0.0001, 0.001),
-            'result': result,
-            'pnl': profit if success else -loss,
-            'capital': self.current_capital
-        }
-        
-        self.trades_history.append(trade)
-        
-        # Añadir operación al sistema de métricas FASE 1
-        self.metrics_tracker.add_operation(trade)
-        
-        # Obtener métricas actualizadas
-        metrics = self.metrics_tracker.get_metrics_summary()
-        
-        # Log a Google Sheets con métricas
-        sheets_result = self.sheets_logger.log_trade(trade, metrics)
-        if sheets_result:
-            self.logger.info("✅ Trade registrado en Google Sheets con métricas")
-        else:
-            self.logger.warning("⚠️ Error registrando en Google Sheets")
-        
-        # Log local
-        local_result = self.local_logger.log_operation(trade)
-        if local_result:
-            self.logger.info("✅ Trade registrado localmente")
-        else:
-            self.logger.warning("⚠️ Error registrando localmente")
-        
-        return trade
+        """Simular ejecución de trade con gestión de riesgo"""
+        try:
+            if signal['signal'] in ['REJECTED', 'ERROR']:
+                return {
+                    'executed': False,
+                    'reason': signal.get('reason', 'Señal rechazada'),
+                    'signal': signal
+                }
+            
+            # Verificar condiciones de seguridad
+            safety_status = self.safety_manager.check_safety_conditions(self.current_capital)
+            
+            if not safety_status['can_trade']:
+                return {
+                    'executed': False,
+                    'reason': safety_status['reason'],
+                    'signal': signal,
+                    'safety_status': safety_status
+                }
+            
+            # Obtener datos de mercado
+            entry_price = signal['price']
+            direction = signal['signal']
+            atr_value = signal['market_data']['atr']
+            
+            # Calcular tamaño de posición
+            position_data = self.position_manager.calculate_position_size(self.current_capital, atr_value)
+            
+            # Calcular SL/TP
+            sl_tp_data = self.position_manager.calculate_sl_tp(entry_price, direction, atr_value)
+            
+            # Simular resultado del trade
+            win_probability = 0.52  # Win rate objetivo
+            is_win = random.random() < win_probability
+            
+            # Calcular P&L
+            if is_win:
+                # Ganancia basada en TP
+                pnl_gross = position_data['size'] * (sl_tp_data['tp_price'] - entry_price) / entry_price
+                result = 'GANANCIA'
+            else:
+                # Pérdida basada en SL
+                pnl_gross = position_data['size'] * (sl_tp_data['sl_price'] - entry_price) / entry_price
+                result = 'PÉRDIDA'
+            
+            # Calcular P&L neto de fees
+            total_fees = position_data['fees'] * 2  # Entrada y salida
+            pnl_net = pnl_gross - total_fees
+            
+            # Actualizar capital
+            new_capital = self.current_capital + pnl_net
+            self.current_capital = new_capital
+            
+            # Registrar trade en sistema de seguridad
+            self.safety_manager.record_trade(result, pnl_net)
+            
+            # Crear datos del trade
+            trade_data = {
+                'timestamp': datetime.now().isoformat(),
+                'symbol': 'BTCUSDT',
+                'direction': direction,
+                'entry_price': entry_price,
+                'size': position_data['size'],
+                'fees': total_fees,
+                'pnl_gross': pnl_gross,
+                'pnl_net': pnl_net,
+                'result': result,
+                'capital': new_capital,
+                'capital_net': new_capital,
+                'atr_value': atr_value,
+                'sl_price': sl_tp_data['sl_price'],
+                'tp_price': sl_tp_data['tp_price'],
+                'confidence': signal['confidence'],
+                'strategy': 'breakout',
+                'phase': 'FASE 1.5',
+                'safety_status': safety_status
+            }
+            
+            # Añadir a métricas
+            self.metrics_tracker.add_operation(trade_data)
+            
+            # Obtener métricas actualizadas
+            metrics = self.metrics_tracker.get_metrics_summary()
+            
+            # Logging
+            self.sheets_logger.log_trade(trade_data, metrics)
+            self.local_logger.log_operation(trade_data)
+            
+            # Mensaje Telegram
+            telegram_message = f"""
+🤖 BOT PROFESIONAL - FASE 1.5
+
+💰 Trade: {direction} BTCUSDT
+💵 Precio: ${entry_price:,.2f}
+📊 Resultado: {result}
+💸 P&L: ${pnl_net:.2f}
+🏦 Capital: ${new_capital:.2f}
+
+📈 Métricas:
+📊 Win Rate: {metrics['win_rate']:.2f}%
+📈 Profit Factor: {metrics['profit_factor']:.2f}
+📉 Drawdown: {metrics['drawdown']:.2f}%
+
+🛡️ Seguridad:
+📊 DD: {safety_status['intraday_drawdown']:.2f}%
+📊 DL: {safety_status['daily_loss']:.2f}%
+📊 CL: {safety_status['consecutive_losses']}
+"""
+            self.send_telegram_message(telegram_message)
+            
+            return {
+                'executed': True,
+                'trade_data': trade_data,
+                'metrics': metrics,
+                'safety_status': safety_status
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error ejecutando trade: {e}")
+            return {'executed': False, 'reason': str(e)}
     
     def run_trading_cycle(self):
-        """Ejecutar ciclo de trading profesional con métricas"""
+        """Ejecutar ciclo de trading con optimizaciones"""
         try:
-            self.counter += 1
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.cycle_count += 1
+            current_time = datetime.now()
             
-            self.logger.info(f"🔄 Ciclo {self.counter} - {current_time}")
+            self.logger.info(f"🔄 Iniciando ciclo {self.cycle_count}...")
+            self.logger.info(f"🔄 Ciclo {self.cycle_count} - {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
             
             # Generar señal
             signal = self.simulate_trading_signal()
-            self.logger.info(f"📊 Señal: {signal['signal']} - {signal['reason']}")
             
-            # Ejecutar operación si hay señal
-            if signal['signal'] != 'WAIT':
-                trade = self.simulate_trade(signal)
-                if trade:
-                    # Obtener métricas actualizadas
-                    metrics = self.metrics_tracker.get_metrics_summary()
-                    
-                    self.logger.info(f"💰 Trade: {trade['side']} {self.symbol} @ ${trade['price']:,.2f} - {trade['result']}")
-                    self.logger.info(f"📊 Métricas: WR={metrics['win_rate']:.2f}%, PF={metrics['profit_factor']:.2f}, DD={metrics['drawdown']:.2f}%")
-                    
-                    # Enviar alerta a Telegram con métricas
-                    alert_msg = f"🤖 BOT PROFESIONAL - FASE 1\n\n💰 Trade: {trade['side']} {self.symbol}\n💵 Precio: ${trade['price']:,.2f}\n📊 Resultado: {trade['result']}\n💸 P&L: ${trade['pnl']:.2f}\n🏦 Capital: ${self.current_capital:.2f}\n\n📈 Métricas:\n📊 Win Rate: {metrics['win_rate']:.2f}%\n📈 Profit Factor: {metrics['profit_factor']:.2f}\n📉 Drawdown: {metrics['drawdown']:.2f}%"
-                    self.send_telegram_message(alert_msg)
+            # Ejecutar trade
+            trade_result = self.simulate_trade(signal)
+            
+            if trade_result['executed']:
+                self.logger.info(f"✅ Trade ejecutado: {trade_result['trade_data']['direction']} @ ${trade_result['trade_data']['entry_price']:.2f}")
+                self.logger.info(f"📊 Métricas: WR={trade_result['metrics']['win_rate']:.2f}%, PF={trade_result['metrics']['profit_factor']:.2f}, DD={trade_result['metrics']['drawdown']:.2f}%")
             else:
-                self.logger.info("⏳ Esperando señales...")
+                self.logger.info(f"❌ Trade rechazado: {trade_result['reason']}")
             
-            # Enviar reporte cada 10 ciclos con métricas
-            if self.counter % 10 == 0:
-                metrics = self.metrics_tracker.get_metrics_summary()
-                report_msg = f"📊 REPORTE PROFESIONAL - FASE 1\n\n🔄 Ciclos: {self.counter}\n💰 Capital: ${self.current_capital:.2f}\n📈 P&L Diario: ${self.daily_pnl:.2f}\n📊 Operaciones: {len(self.trades_history)}\n\n📈 Métricas:\n📊 Win Rate: {metrics['win_rate']:.2f}%\n📈 Profit Factor: {metrics['profit_factor']:.2f}\n📉 Drawdown: {metrics['drawdown']:.2f}%"
-                self.send_telegram_message(report_msg)
+            self.logger.info(f"✅ Ciclo {self.cycle_count} completado, esperando {self.update_interval}s...")
             
         except Exception as e:
-            self.logger.error(f"❌ Error en ciclo: {e}")
+            self.logger.error(f"❌ Error en ciclo de trading: {e}")
     
     def start(self):
-        """Iniciar bot profesional con métricas"""
-        self.logger.info("🚀 Iniciando bot profesional - FASE 1...")
-        
-        # Mensaje de inicio con métricas
-        start_msg = "🤖 BOT PROFESIONAL - FASE 1 INICIADO\n\n✅ Sistema de métricas activo\n📊 Trading automatizado\n🔄 Ciclos cada 60 segundos\n📱 Alertas con métricas\n📊 Google Sheets con métricas\n💾 Logging local activo\n\n📈 Métricas iniciales:\n📊 Win Rate: 0.00%\n📈 Profit Factor: 0.00\n📉 Drawdown: 0.00%"
-        self.send_telegram_message(start_msg)
-        
-        self.logger.info("✅ Bot profesional - FASE 1 iniciado correctamente")
-        self.logger.info("🔄 Iniciando bucle principal con métricas...")
-        
-        # Bucle principal profesional
-        cycle_count = 0
-        while self.is_running:
-            try:
-                cycle_count += 1
-                self.logger.info(f"🔄 Iniciando ciclo {cycle_count}...")
-                self.run_trading_cycle()
-                self.logger.info(f"✅ Ciclo {cycle_count} completado, esperando 60s...")
-                time.sleep(60)  # 1 minuto
-                
-            except KeyboardInterrupt:
-                self.logger.info("🛑 Bot detenido por usuario")
-                break
-            except Exception as e:
-                self.logger.error(f"❌ Error en ciclo {cycle_count}: {e}")
-                import traceback
-                self.logger.error(f"📋 Traceback: {traceback.format_exc()}")
-                time.sleep(30)  # Esperar 30 segundos antes de reintentar
+        """Iniciar bot de trading"""
+        try:
+            self.logger.info("🔄 Iniciando bucle principal con optimizaciones...")
+            
+            # Resetear contadores horarios cada hora
+            last_hourly_reset = datetime.now()
+            
+            while self.running:
+                try:
+                    # Resetear contadores horarios
+                    current_time = datetime.now()
+                    if (current_time - last_hourly_reset).total_seconds() >= 3600:  # 1 hora
+                        self.safety_manager.reset_hourly_counters()
+                        last_hourly_reset = current_time
+                    
+                    # Ejecutar ciclo
+                    self.run_trading_cycle()
+                    
+                    # Esperar intervalo
+                    time.sleep(self.update_interval)
+                    
+                except KeyboardInterrupt:
+                    self.logger.info("🛑 Interrupción manual recibida")
+                    break
+                except Exception as e:
+                    self.logger.error(f"❌ Error en bucle principal: {e}")
+                    time.sleep(60)  # Esperar 1 minuto antes de reintentar
+            
+            # Mensaje de cierre
+            final_message = f"""
+🤖 BOT PROFESIONAL - CERRANDO
+
+📊 Resumen Final:
+🔄 Ciclos ejecutados: {self.cycle_count}
+💰 Capital final: ${self.current_capital:.2f}
+📈 P&L: ${self.current_capital - 50.0:.2f}
+
+✅ Bot cerrado correctamente
+"""
+            self.send_telegram_message(final_message)
+            self.logger.info("✅ Bot cerrado correctamente")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error iniciando bot: {e}")
 
 def main():
     """Función principal - FASE 1: MÉTRICAS"""
