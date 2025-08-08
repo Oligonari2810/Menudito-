@@ -562,7 +562,8 @@ class GoogleSheetsLogger:
             # Preparar datos del trade
             timestamp = trade_data.get('timestamp', datetime.now().isoformat())
             dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-            date_str = dt.strftime('%Y-%m-%d %H:%M:%S')
+            date_part = dt.strftime('%Y-%m-%d')
+            time_part = dt.strftime('%H:%M:%S')
             
             # Obtener métricas si no se proporcionan
             if not metrics:
@@ -572,33 +573,34 @@ class GoogleSheetsLogger:
                     'drawdown': 0.0
                 }
             
-            # Crear fila de datos
+            # Crear fila de datos (Date, Time en columnas separadas)
             row_data = [
-                date_str,  # Fecha/Hora
+                date_part,                 # Fecha
+                time_part,                 # Hora
                 trade_data.get('symbol', 'BNBUSDT'),  # Símbolo
-                trade_data.get('direction', ''),  # Dirección
+                trade_data.get('direction', ''),      # Dirección
                 f"${trade_data.get('entry_price', 0):,.2f}",  # Precio
-                f"{trade_data.get('size', 0):.6f}",  # Cantidad
+                f"{trade_data.get('size', 0):.6f}",           # Cantidad
                 f"${trade_data.get('size', 0) * trade_data.get('entry_price', 0):.2f}",  # Valor
-                trade_data.get('strategy', 'breakout'),  # Estrategia
-                f"{trade_data.get('confidence', 0):.1%}",  # Confianza
-                trade_data.get('phase', 'FASE 1.5 PATCHED'),  # Fase
-                trade_data.get('result', ''),  # Resultado
-                f"${trade_data.get('pnl_net', 0):.3f}",  # P&L
-                f"${trade_data.get('capital', 0):.2f}",  # Capital
-                f"{metrics.get('win_rate', 0):.2f}%",  # Win Rate
-                f"{metrics.get('profit_factor', 0):.2f}",  # Profit Factor
-                f"{metrics.get('drawdown', 0):.2f}%",  # Drawdown
-                trade_data.get('atr_value', 0),  # ATR
-                trade_data.get('sl_price', 0),  # SL
-                trade_data.get('tp_price', 0),  # TP
-                trade_data.get('fees', 0),  # Fees
-                trade_data.get('pnl_gross', 0)  # P&L Bruto
+                trade_data.get('strategy', 'breakout'),        # Estrategia
+                f"{trade_data.get('confidence', 0):.1%}",     # Confianza
+                trade_data.get('phase', 'FASE 1.5 PATCHED'),   # Fase
+                trade_data.get('result', ''),                  # Resultado
+                f"${trade_data.get('pnl_net', 0):.3f}",       # P&L
+                f"${trade_data.get('capital', 0):.2f}",       # Capital
+                f"{metrics.get('win_rate', 0):.2f}%",         # Win Rate
+                f"{metrics.get('profit_factor', 0):.2f}",     # Profit Factor
+                f"{metrics.get('drawdown', 0):.2f}%",         # Drawdown
+                trade_data.get('atr_value', 0),                # ATR
+                trade_data.get('sl_price', 0),                 # SL
+                trade_data.get('tp_price', 0),                 # TP
+                trade_data.get('fees', 0),                     # Fees
+                trade_data.get('pnl_gross', 0)                 # P&L Bruto
             ]
             
             # Añadir fila
             worksheet.append_row(row_data)
-            self.logger.info("✅ Trade registrado en Google Sheets con métricas")
+            self.logger.info("✅ Trade registrado en Google Sheets con métricas (Fecha y Hora separadas)")
             return True
             
         except Exception as e:
