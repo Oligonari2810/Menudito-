@@ -64,7 +64,7 @@ class SafetyManager:
         self.daily_loss_limit = 0.03  # 3%
         self.intraday_drawdown_limit = 0.10  # 10%
         self.max_consecutive_losses = 3
-        self.min_cooldown_seconds = 90
+        self.min_cooldown_seconds = 60  # Reducido de 90s a 60s
         self.max_trades_per_hour = 20
         self.max_trades_per_day = 160
         
@@ -199,8 +199,13 @@ class MarketFilter:
         self.atr_percentile_min = 40
         self.ema_period = 50
         self.ema_timeframe = "1m"
-        self.spread_max = 0.03  # 0.03%
+        self.spread_max = 0.03  # 0.03% base
         self.slippage_max = 0.02  # 0.02%
+        
+        # Configuración adaptativa
+        self.spread_adaptive_on = True
+        self.spread_adaptive_threshold = 0.04  # Subir a 0.04-0.05% si necesario
+        self.maker_only_enabled = True
         
     def check_market_conditions(self, price: float, volume: float) -> Dict:
         """Verificar condiciones de mercado para operar"""
@@ -210,12 +215,21 @@ class MarketFilter:
             ema_value = self.simulate_ema(price)
             spread_value = self.simulate_spread(price)
             
+            # Spread adaptativo
+            current_spread_max = self.spread_max
+            if self.spread_adaptive_on and spread_value > self.spread_max:
+                # Permitir spread más alto si es necesario
+                current_spread_max = min(spread_value * 1.2, self.spread_adaptive_threshold)
+                self.logger.info(f"📊 Spread adaptativo: {spread_value:.3f}% → permitido hasta {current_spread_max:.3f}%")
+            
             filter_status = {
                 'can_trade': True,
                 'reason': None,
                 'atr': atr_value,
                 'ema': ema_value,
-                'spread': spread_value
+                'spread': spread_value,
+                'maker_only': self.maker_only_enabled,
+                'spread_adaptive': self.spread_adaptive_on
             }
             
             # Filtro ATR (volatilidad mínima)
@@ -229,10 +243,10 @@ class MarketFilter:
             else:
                 filter_status['direction'] = 'SELL'
             
-            # Filtro spread
-            if spread_value > self.spread_max:
+            # Filtro spread adaptativo
+            if spread_value > current_spread_max:
                 filter_status['can_trade'] = False
-                filter_status['reason'] = f"Spread alto: {spread_value:.3f}%"
+                filter_status['reason'] = f"Spread alto: {spread_value:.3f}% (máx: {current_spread_max:.3f}%)"
             
             return filter_status
             
@@ -270,6 +284,12 @@ class PositionManager:
         self.fee_rate = 0.001  # 0.1%
         self.fees_included = True
         
+        # Configuración de trading
+        self.position_size_usd_min = 2.00  # Mínimo $2 USD
+        self.enable_maker_only = True  # Solo órdenes maker
+        self.spread_adaptive_on = True  # Spread adaptativo
+        self.enable_parallel_pairs = ["ETHUSDT"]  # Pairs adicionales
+        
     def calculate_position_size(self, capital: float, atr_value: float) -> Dict:
         """Calcular tamaño de posición basado en ATR"""
         try:
@@ -285,6 +305,10 @@ class PositionManager:
             # Tamaño final
             final_size = min(atr_adjusted_size, max_size)
             
+            # Verificar mínimo USD
+            if final_size < self.position_size_usd_min:
+                final_size = self.position_size_usd_min
+            
             # Calcular fees
             estimated_fees = final_size * self.fee_rate
             
@@ -294,10 +318,12 @@ class PositionManager:
                 'size_net': final_size - estimated_fees,
                 'atr_value': atr_value,
                 'base_size': base_size,
-                'max_size': max_size
+                'max_size': max_size,
+                'maker_only': self.enable_maker_only,
+                'spread_adaptive': self.spread_adaptive_on
             }
             
-            self.logger.info(f"💰 Tamaño posición: ${final_size:.2f} (ATR: {atr_value:.3f})")
+            self.logger.info(f"💰 Tamaño posición: ${final_size:.2f} (ATR: {atr_value:.3f}, Maker: {self.enable_maker_only})")
             return position_data
             
         except Exception as e:
@@ -745,6 +771,13 @@ class ProfessionalTradingBot:
 🎯 Filtros de mercado activos
 📊 Telemetría cada 5 min
 🚨 Alertas críticas activas
+
+⚙️ Nuevas Configuraciones:
+💰 Tamaño mínimo: $2.00 USD
+⏱️ Cooldown: 60s (reducido)
+📊 Spread adaptativo: 0.03% → 0.04-0.05%
+🔒 Maker-only: activado
+📈 Rate limit: 20/hora, 160/día
 
 🚀 Listo para sesión de 4h en testnet
 """
