@@ -11,7 +11,11 @@ import signal
 import random
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+from decimal import Decimal, getcontext
 import requests
+
+# Configurar precisión decimal
+getcontext().prec = 8
 
 # Configurar logging profesional
 logging.basicConfig(
@@ -33,6 +37,13 @@ class SafetyManager:
         self.session_start_time = datetime.now()
         self.session_start_capital = 50.0
         
+        # Cooldown racha
+        self.racha_cooldown_start = None
+        self.racha_cooldown_duration = 1800  # 30 minutos
+        self.probation_mode = False
+        self.probation_trades = 0
+        self.max_probation_trades = 1
+        
         # Límites de seguridad
         self.daily_loss_limit = 0.03  # 3%
         self.intraday_drawdown_limit = 0.10  # 10%
@@ -48,13 +59,18 @@ class SafetyManager:
             self.intraday_drawdown = ((self.session_start_capital - current_capital) / self.session_start_capital) * 100
             self.daily_loss = ((50.0 - current_capital) / 50.0) * 100
             
+            # Verificar cooldown racha
+            self.check_racha_cooldown()
+            
             # Verificar límites
             safety_status = {
                 'can_trade': True,
                 'reason': None,
                 'daily_loss': self.daily_loss,
                 'intraday_drawdown': self.intraday_drawdown,
-                'consecutive_losses': self.consecutive_losses
+                'consecutive_losses': self.consecutive_losses,
+                'probation_mode': self.probation_mode,
+                'racha_cooldown_active': self.racha_cooldown_start is not None
             }
             
             # Kill switches
@@ -69,6 +85,12 @@ class SafetyManager:
             elif self.consecutive_losses >= 3:
                 safety_status['can_trade'] = False
                 safety_status['reason'] = f"Racha de pérdidas: {self.consecutive_losses} consecutivas"
+            
+            # Cooldown racha
+            elif self.racha_cooldown_start and (datetime.now() - self.racha_cooldown_start).total_seconds() < self.racha_cooldown_duration:
+                safety_status['can_trade'] = False
+                remaining_time = self.racha_cooldown_duration - (datetime.now() - self.racha_cooldown_start).total_seconds()
+                safety_status['reason'] = f"Cooldown racha activo: {remaining_time/60:.1f}min restantes"
             
             # Rate limiting
             if self.last_trade_time:
@@ -91,6 +113,19 @@ class SafetyManager:
             self.logger.error(f"❌ Error en verificación de seguridad: {e}")
             return {'can_trade': False, 'reason': f"Error de seguridad: {e}"}
     
+    def check_racha_cooldown(self):
+        """Verificar y gestionar cooldown de racha"""
+        try:
+            # Si hay cooldown activo y ha pasado el tiempo
+            if self.racha_cooldown_start and (datetime.now() - self.racha_cooldown_start).total_seconds() >= self.racha_cooldown_duration:
+                self.racha_cooldown_start = None
+                self.probation_mode = True
+                self.probation_trades = 0
+                self.logger.info("🔄 Cooldown racha completado - Modo probation activado")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error verificando cooldown racha: {e}")
+    
     def record_trade(self, result: str, pnl: float):
         """Registrar resultado de trade para métricas de seguridad"""
         try:
@@ -101,10 +136,29 @@ class SafetyManager:
             # Actualizar racha de pérdidas
             if result == 'PÉRDIDA':
                 self.consecutive_losses += 1
+                
+                # Activar cooldown si alcanza límite
+                if self.consecutive_losses >= self.max_consecutive_losses:
+                    self.racha_cooldown_start = datetime.now()
+                    self.logger.info(f"🚨 Racha de pérdidas crítica ({self.consecutive_losses}) - Cooldown 30min activado")
             else:
                 self.consecutive_losses = 0
                 
-            self.logger.info(f"📊 Seguridad: DD={self.intraday_drawdown:.2f}%, DL={self.daily_loss:.2f}%, CL={self.consecutive_losses}")
+                # Si está en probation y gana, salir del modo
+                if self.probation_mode:
+                    self.probation_mode = False
+                    self.probation_trades = 0
+                    self.logger.info("✅ Probation exitoso - Modo normal restaurado")
+            
+            # Actualizar probation trades
+            if self.probation_mode:
+                self.probation_trades += 1
+                if self.probation_trades >= self.max_probation_trades:
+                    self.probation_mode = False
+                    self.probation_trades = 0
+                    self.logger.info("✅ Probation completado - Modo normal restaurado")
+                
+            self.logger.info(f"📊 Seguridad: DD={self.intraday_drawdown:.2f}%, DL={self.daily_loss:.2f}%, CL={self.consecutive_losses}, Probation={self.probation_mode}")
             
         except Exception as e:
             self.logger.error(f"❌ Error registrando trade: {e}")
@@ -323,21 +377,43 @@ class MetricsTracker:
             if not self.operations_history:
                 return 0.0
             
-            # Usar P&L neto de fees
+            # Usar P&L neto de fees con precisión completa
             total_gains = sum(op.get('pnl_net', 0) for op in self.operations_history if op.get('pnl_net', 0) > 0)
             total_losses = abs(sum(op.get('pnl_net', 0) for op in self.operations_history if op.get('pnl_net', 0) < 0))
             
+            # Manejar casos especiales
             if total_losses == 0:
-                profit_factor = total_gains if total_gains > 0 else 0.0
+                if total_gains > 0:
+                    profit_factor = float('inf')  # Infinito para gains sin losses
+                else:
+                    profit_factor = 0.0  # Sin operaciones
+            elif total_gains == 0:
+                profit_factor = 0.0  # Solo losses
             else:
                 profit_factor = total_gains / total_losses
             
-            self.logger.info(f"📈 Profit Factor (neto) calculado: {profit_factor:.2f} (Gains: ${total_gains:.2f}, Losses: ${total_losses:.2f})")
+            self.logger.info(f"📈 Profit Factor (neto) calculado: {profit_factor:.2f} (Gains: ${total_gains:.4f}, Losses: ${total_losses:.4f})")
             return profit_factor
             
         except Exception as e:
             self.logger.error(f"❌ Error calculando Profit Factor: {e}")
             return 0.0
+    
+    def get_profit_factor_display(self) -> str:
+        """Obtener PF para display con manejo de casos especiales"""
+        try:
+            pf = self.calculate_profit_factor()
+            
+            if pf == float('inf'):
+                return "N/A"
+            elif pf == 0.0:
+                return "N/A"
+            else:
+                return f"{pf:.2f}"
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error obteniendo PF display: {e}")
+            return "N/A"
     
     def calculate_drawdown(self) -> float:
         """Calcular Drawdown actual"""
@@ -420,73 +496,114 @@ class GoogleSheetsLogger:
     
     def log_trade(self, trade_data: Dict, metrics: Dict = None) -> bool:
         """Log trade a Google Sheets con métricas"""
-        if not self.sheets_enabled:
-            self.logger.warning("⚠️ Google Sheets no habilitado")
-            return False
-            
         try:
-            import gspread
-            
-            # Abrir spreadsheet por ID específico
-            try:
-                spreadsheet = self.client.open_by_key("1aks2jTMCacJ5rdigtolhHB3JiSw5B8rWDHYT_rjk69U")
-            except gspread.SpreadsheetNotFound:
-                spreadsheet = self.client.create(self.spreadsheet_name)
-                self.logger.info(f"✅ Spreadsheet creado: {self.spreadsheet_name}")
+            if not self.sheets_enabled:
+                return False
             
             # Obtener worksheet
-            try:
-                worksheet = spreadsheet.worksheet(self.worksheet_name)
-            except gspread.WorksheetNotFound:
-                worksheet = spreadsheet.add_worksheet(title=self.worksheet_name, rows=1000, cols=16)
-                self.logger.info(f"✅ Worksheet creado: {self.worksheet_name}")
+            spreadsheet = self.client.open(self.spreadsheet_name)
+            worksheet = spreadsheet.worksheet(self.worksheet_name)
             
-            # Preparar datos en formato profesional con métricas
-            timestamp = trade_data.get('timestamp', '')
-            # Separar fecha y hora
-            if 'T' in timestamp:
-                date_part = timestamp.split('T')[0]
-                time_part = timestamp.split('T')[1].split('.')[0]
-            else:
-                date_part = timestamp.split(' ')[0] if ' ' in timestamp else timestamp
-                time_part = timestamp.split(' ')[1] if ' ' in timestamp else ''
+            # Preparar datos del trade
+            timestamp = trade_data.get('timestamp', datetime.now().isoformat())
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            date_str = dt.strftime('%Y-%m-%d %H:%M:%S')
             
-            # Calcular monto
-            amount = trade_data.get('amount', 0)
-            price = trade_data.get('price', 0)
-            monto = amount * price if amount and price else 0
+            # Obtener métricas si no se proporcionan
+            if not metrics:
+                metrics = {
+                    'win_rate': 0.0,
+                    'profit_factor': 0.0,
+                    'drawdown': 0.0
+                }
             
-            # Obtener métricas si están disponibles
-            win_rate = metrics.get('win_rate', 0) if metrics else 0
-            profit_factor = metrics.get('profit_factor', 0) if metrics else 0
-            drawdown = metrics.get('drawdown', 0) if metrics else 0
-            
+            # Crear fila de datos
             row_data = [
-                date_part,  # Fecha
-                time_part,  # Hora
-                trade_data.get('symbol', ''),  # Símbolo
-                trade_data.get('side', ''),  # Dirección
-                f"${trade_data.get('price', 0):,.2f}" if trade_data.get('price') else '',  # Precio Entrada
-                f"{trade_data.get('amount', 0):.6f}",  # Cantidad
-                f"${monto:,.2f}",  # Monto
-                'breakout',  # Estrategia
-                '0.6%',  # Confianza
-                'BOT PROFESIONAL - FASE 1',  # IA Validación
+                date_str,  # Fecha/Hora
+                trade_data.get('symbol', 'BTCUSDT'),  # Símbolo
+                trade_data.get('direction', ''),  # Dirección
+                f"${trade_data.get('entry_price', 0):,.2f}",  # Precio
+                f"{trade_data.get('size', 0):.6f}",  # Cantidad
+                f"${trade_data.get('size', 0) * trade_data.get('entry_price', 0):.2f}",  # Valor
+                trade_data.get('strategy', 'breakout'),  # Estrategia
+                f"{trade_data.get('confidence', 0):.1%}",  # Confianza
+                trade_data.get('phase', 'FASE 1.5 PATCHED'),  # Fase
                 trade_data.get('result', ''),  # Resultado
-                f"${trade_data.get('pnl', 0):,.2f}",  # P&L
-                f"${trade_data.get('capital', 0):,.2f}",  # Balance
-                f"{win_rate:.2f}%",  # Win Rate
-                f"{profit_factor:.2f}",  # Profit Factor
-                f"{drawdown:.2f}%"  # Drawdown
+                f"${trade_data.get('pnl_net', 0):.3f}",  # P&L
+                f"${trade_data.get('capital', 0):.2f}",  # Capital
+                f"{metrics.get('win_rate', 0):.2f}%",  # Win Rate
+                f"{metrics.get('profit_factor', 0):.2f}",  # Profit Factor
+                f"{metrics.get('drawdown', 0):.2f}%",  # Drawdown
+                trade_data.get('atr_value', 0),  # ATR
+                trade_data.get('sl_price', 0),  # SL
+                trade_data.get('tp_price', 0),  # TP
+                trade_data.get('fees', 0),  # Fees
+                trade_data.get('pnl_gross', 0)  # P&L Bruto
             ]
             
-            # Agregar fila
+            # Añadir fila
             worksheet.append_row(row_data)
             self.logger.info("✅ Trade registrado en Google Sheets con métricas")
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Error registrando en Google Sheets: {e}")
+            self.logger.error(f"❌ Error registrando trade en Sheets: {e}")
+            return False
+    
+    def log_telemetry(self, telemetry_data: Dict) -> bool:
+        """Log telemetría a Google Sheets"""
+        try:
+            if not self.sheets_enabled:
+                return False
+            
+            # Obtener worksheet de telemetría
+            spreadsheet = self.client.open(self.spreadsheet_name)
+            
+            # Crear worksheet de telemetría si no existe
+            try:
+                worksheet = spreadsheet.worksheet("Telemetría")
+            except:
+                worksheet = spreadsheet.add_worksheet(title="Telemetría", rows=1000, cols=20)
+                # Crear headers
+                headers = [
+                    'Timestamp', 'Win Rate', 'Profit Factor', 'Drawdown', 
+                    'Trades/Hour', 'Fees Ratio', 'Rejection Low Vol', 
+                    'Rejection Trend Mismatch', 'Rejection Spread', 
+                    'Rejection Safety', 'Rejection Cooldown', 'Total Signals',
+                    'Probation Mode', 'Racha Cooldown'
+                ]
+                worksheet.append_row(headers)
+            
+            # Preparar datos de telemetría
+            timestamp = telemetry_data.get('timestamp', datetime.now().isoformat())
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            date_str = dt.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Crear fila de telemetría
+            row_data = [
+                date_str,  # Timestamp
+                f"{telemetry_data.get('win_rate', 0):.2f}%",  # Win Rate
+                telemetry_data.get('profit_factor', 'N/A'),  # Profit Factor
+                f"{telemetry_data.get('drawdown', 0):.2f}%",  # Drawdown
+                telemetry_data.get('trades_per_hour', 0),  # Trades/Hour
+                f"{telemetry_data.get('fees_ratio', 0):.2f}%",  # Fees Ratio
+                f"{telemetry_data.get('rejection_low_vol', 0):.2f}%",  # Rejection Low Vol
+                f"{telemetry_data.get('rejection_trend_mismatch', 0):.2f}%",  # Rejection Trend Mismatch
+                f"{telemetry_data.get('rejection_spread', 0):.2f}%",  # Rejection Spread
+                f"{telemetry_data.get('rejection_safety', 0):.2f}%",  # Rejection Safety
+                f"{telemetry_data.get('rejection_cooldown', 0):.2f}%",  # Rejection Cooldown
+                telemetry_data.get('total_signals', 0),  # Total Signals
+                telemetry_data.get('probation_mode', False),  # Probation Mode
+                telemetry_data.get('racha_cooldown', False)  # Racha Cooldown
+            ]
+            
+            # Añadir fila
+            worksheet.append_row(row_data)
+            self.logger.info("✅ Telemetría registrada en Google Sheets")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error registrando telemetría en Sheets: {e}")
             return False
 
 class LocalLogger:
@@ -578,6 +695,7 @@ class ProfessionalTradingBot:
         self.position_manager = PositionManager()
         self.sheets_logger = GoogleSheetsLogger()
         self.local_logger = LocalLogger()
+        self.telemetry_manager = TelemetryManager(self)
         
         # Configuración de trading
         self.update_interval = 180  # 3 minutos (vs 60s anterior)
@@ -592,15 +710,16 @@ class ProfessionalTradingBot:
         self.logger.info("✅ Sistema de seguridad inicializado")
         self.logger.info("✅ Filtros de mercado inicializados")
         self.logger.info("✅ Gestión de posiciones inicializada")
+        self.logger.info("✅ Telemetría y alertas inicializadas")
         self.logger.info("✅ Google Sheets configurado desde variable de entorno")
         self.logger.info("✅ Google Sheets habilitado")
         self.logger.info("✅ Directorio de datos creado: trading_data")
         self.logger.info("✅ Logging local habilitado")
-        self.logger.info("🚀 Iniciando bot profesional - FASE 1.5...")
+        self.logger.info("🚀 Iniciando bot profesional - FASE 1.5 PATCHED...")
         
         # Mensaje de inicio
         startup_message = f"""
-🤖 BOT PROFESIONAL - FASE 1.5 INICIADO
+🤖 BOT PROFESIONAL - FASE 1.5 PATCHED
 
 📊 Configuración Optimizada:
 ⏱️ Intervalo: {self.update_interval}s
@@ -608,11 +727,13 @@ class ProfessionalTradingBot:
 🛡️ Sistema de seguridad activo
 📈 Métricas netas de fees
 🎯 Filtros de mercado activos
+📊 Telemetría cada 5 min
+🚨 Alertas críticas activas
 
-🚀 Listo para operar con optimizaciones
+🚀 Listo para sesión de 4h en testnet
 """
         self.send_telegram_message(startup_message)
-        self.logger.info("✅ Bot profesional - FASE 1.5 iniciado correctamente")
+        self.logger.info("✅ Bot profesional - FASE 1.5 PATCHED iniciado correctamente")
     
     def handle_shutdown(self, signum, frame):
         """Manejar señal de interrupción"""
@@ -655,6 +776,8 @@ class ProfessionalTradingBot:
             market_conditions = self.market_filter.check_market_conditions(current_price, volume)
             
             if not market_conditions['can_trade']:
+                # Registrar motivo de rechazo
+                self.telemetry_manager.record_rejection(market_conditions['reason'])
                 return {
                     'signal': 'REJECTED',
                     'reason': market_conditions['reason'],
@@ -689,6 +812,9 @@ class ProfessionalTradingBot:
         """Simular ejecución de trade con gestión de riesgo"""
         try:
             if signal['signal'] in ['REJECTED', 'ERROR']:
+                # Registrar rechazo por seguridad
+                if signal['signal'] == 'REJECTED':
+                    self.telemetry_manager.record_rejection('safety_block')
                 return {
                     'executed': False,
                     'reason': signal.get('reason', 'Señal rechazada'),
@@ -699,6 +825,12 @@ class ProfessionalTradingBot:
             safety_status = self.safety_manager.check_safety_conditions(self.current_capital)
             
             if not safety_status['can_trade']:
+                # Registrar rechazo por cooldown
+                if 'cooldown' in safety_status['reason'].lower():
+                    self.telemetry_manager.record_rejection('cooldown')
+                else:
+                    self.telemetry_manager.record_rejection('safety_block')
+                    
                 return {
                     'executed': False,
                     'reason': safety_status['reason'],
@@ -764,7 +896,7 @@ class ProfessionalTradingBot:
                 'tp_price': sl_tp_data['tp_price'],
                 'confidence': signal['confidence'],
                 'strategy': 'breakout',
-                'phase': 'FASE 1.5',
+                'phase': 'FASE 1.5 PATCHED',
                 'safety_status': safety_status
             }
             
@@ -778,9 +910,9 @@ class ProfessionalTradingBot:
             self.sheets_logger.log_trade(trade_data, metrics)
             self.local_logger.log_operation(trade_data)
             
-            # Mensaje Telegram
+            # Mensaje Telegram con PF "N/A"
             telegram_message = f"""
-🤖 BOT PROFESIONAL - FASE 1.5
+🤖 BOT PROFESIONAL - FASE 1.5 PATCHED
 
 💰 Trade: {direction} BTCUSDT
 💵 Precio: ${entry_price:,.2f}
@@ -790,13 +922,14 @@ class ProfessionalTradingBot:
 
 📈 Métricas:
 📊 Win Rate: {metrics['win_rate']:.2f}%
-📈 Profit Factor: {metrics['profit_factor']:.2f}
+📈 Profit Factor: {self.metrics_tracker.get_profit_factor_display()}
 📉 Drawdown: {metrics['drawdown']:.2f}%
 
 🛡️ Seguridad:
 📊 DD: {safety_status['intraday_drawdown']:.2f}%
 📊 DL: {safety_status['daily_loss']:.2f}%
 📊 CL: {safety_status['consecutive_losses']}
+🔒 Probation: {safety_status.get('probation_mode', False)}
 """
             self.send_telegram_message(telegram_message)
             
@@ -828,9 +961,13 @@ class ProfessionalTradingBot:
             
             if trade_result['executed']:
                 self.logger.info(f"✅ Trade ejecutado: {trade_result['trade_data']['direction']} @ ${trade_result['trade_data']['entry_price']:.2f}")
-                self.logger.info(f"📊 Métricas: WR={trade_result['metrics']['win_rate']:.2f}%, PF={trade_result['metrics']['profit_factor']:.2f}, DD={trade_result['metrics']['drawdown']:.2f}%")
+                self.logger.info(f"📊 Métricas: WR={trade_result['metrics']['win_rate']:.2f}%, PF={self.metrics_tracker.get_profit_factor_display()}, DD={trade_result['metrics']['drawdown']:.2f}%")
             else:
                 self.logger.info(f"❌ Trade rechazado: {trade_result['reason']}")
+            
+            # Enviar telemetría si es necesario
+            if trade_result['executed']:
+                self.telemetry_manager.send_telemetry(trade_result['metrics'], trade_result['safety_status'])
             
             self.logger.info(f"✅ Ciclo {self.cycle_count} completado, esperando {self.update_interval}s...")
             
@@ -882,6 +1019,153 @@ class ProfessionalTradingBot:
             
         except Exception as e:
             self.logger.error(f"❌ Error iniciando bot: {e}")
+
+class TelemetryManager:
+    """Sistema de telemetría y alertas"""
+    
+    def __init__(self, bot_instance):
+        self.logger = logging.getLogger(__name__)
+        self.bot = bot_instance
+        self.last_telemetry_time = datetime.now()
+        self.telemetry_interval = 300  # 5 minutos
+        self.rejection_reasons = {
+            'low_vol': 0,
+            'trend_mismatch': 0,
+            'spread_high': 0,
+            'safety_block': 0,
+            'cooldown': 0
+        }
+        self.total_signals = 0
+        
+    def record_rejection(self, reason: str):
+        """Registrar motivo de rechazo"""
+        try:
+            self.total_signals += 1
+            if reason in self.rejection_reasons:
+                self.rejection_reasons[reason] += 1
+            else:
+                self.rejection_reasons['other'] = self.rejection_reasons.get('other', 0) + 1
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error registrando rechazo: {e}")
+    
+    def calculate_rejection_percentages(self) -> Dict:
+        """Calcular porcentajes de rechazo"""
+        try:
+            if self.total_signals == 0:
+                return {reason: 0.0 for reason in self.rejection_reasons}
+            
+            percentages = {}
+            for reason, count in self.rejection_reasons.items():
+                percentages[reason] = (count / self.total_signals) * 100
+                
+            return percentages
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculando porcentajes: {e}")
+            return {}
+    
+    def should_send_telemetry(self) -> bool:
+        """Verificar si debe enviar telemetría"""
+        return (datetime.now() - self.last_telemetry_time).total_seconds() >= self.telemetry_interval
+    
+    def should_send_alert(self, metrics: Dict, safety_status: Dict) -> bool:
+        """Verificar si debe enviar alerta crítica"""
+        try:
+            # Alertas críticas
+            if metrics.get('drawdown', 0) > 10.0:
+                return True
+            if metrics.get('profit_factor', 0) < 1.2 and metrics.get('profit_factor', 0) > 0:
+                return True
+            if metrics.get('win_rate', 0) < 45.0:
+                return True
+            
+            # Calcular fees ratio
+            total_pnl = sum(op.get('pnl_net', 0) for op in self.bot.metrics_tracker.operations_history)
+            total_fees = sum(op.get('fees', 0) for op in self.bot.metrics_tracker.operations_history)
+            
+            if total_pnl > 0 and total_fees > 0:
+                fees_ratio = (total_fees / total_pnl) * 100
+                if fees_ratio > 25.0:
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error verificando alertas: {e}")
+            return False
+    
+    def send_telemetry(self, metrics: Dict, safety_status: Dict):
+        """Enviar telemetría a Google Sheets"""
+        try:
+            if not self.should_send_telemetry():
+                return
+            
+            # Calcular métricas adicionales
+            trades_per_hour = safety_status.get('hourly_trades', 0)
+            rejection_percentages = self.calculate_rejection_percentages()
+            
+            # Calcular fees ratio
+            total_pnl = sum(op.get('pnl_net', 0) for op in self.bot.metrics_tracker.operations_history)
+            total_fees = sum(op.get('fees', 0) for op in self.bot.metrics_tracker.operations_history)
+            fees_ratio = (total_fees / total_pnl) * 100 if total_pnl > 0 else 0
+            
+            # Crear datos de telemetría
+            telemetry_data = {
+                'timestamp': datetime.now().isoformat(),
+                'win_rate': metrics.get('win_rate', 0),
+                'profit_factor': self.bot.metrics_tracker.get_profit_factor_display(),
+                'drawdown': metrics.get('drawdown', 0),
+                'trades_per_hour': trades_per_hour,
+                'fees_ratio': fees_ratio,
+                'rejection_low_vol': rejection_percentages.get('low_vol', 0),
+                'rejection_trend_mismatch': rejection_percentages.get('trend_mismatch', 0),
+                'rejection_spread': rejection_percentages.get('spread_high', 0),
+                'rejection_safety': rejection_percentages.get('safety_block', 0),
+                'rejection_cooldown': rejection_percentages.get('cooldown', 0),
+                'total_signals': self.total_signals,
+                'probation_mode': safety_status.get('probation_mode', False),
+                'racha_cooldown': safety_status.get('racha_cooldown_active', False)
+            }
+            
+            # Enviar a Google Sheets
+            self.bot.sheets_logger.log_telemetry(telemetry_data)
+            
+            # Verificar alertas críticas
+            if self.should_send_alert(metrics, safety_status):
+                self.send_critical_alert(metrics, safety_status, telemetry_data)
+            
+            self.last_telemetry_time = datetime.now()
+            self.logger.info("📊 Telemetría enviada")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error enviando telemetría: {e}")
+    
+    def send_critical_alert(self, metrics: Dict, safety_status: Dict, telemetry_data: Dict):
+        """Enviar alerta crítica a Telegram"""
+        try:
+            alert_message = f"""
+🚨 ALERTA CRÍTICA - BOT PROFESIONAL
+
+📊 Métricas Críticas:
+📉 Drawdown: {metrics.get('drawdown', 0):.2f}%
+📈 Profit Factor: {self.bot.metrics_tracker.get_profit_factor_display()}
+📊 Win Rate: {metrics.get('win_rate', 0):.2f}%
+💰 Fees Ratio: {telemetry_data.get('fees_ratio', 0):.2f}%
+
+🛡️ Estado Seguridad:
+📊 DD: {safety_status.get('intraday_drawdown', 0):.2f}%
+📊 DL: {safety_status.get('daily_loss', 0):.2f}%
+📊 CL: {safety_status.get('consecutive_losses', 0)}
+🔒 Probation: {safety_status.get('probation_mode', False)}
+
+⚠️ Requiere atención inmediata
+"""
+            self.bot.send_telegram_message(alert_message)
+            self.logger.info("🚨 Alerta crítica enviada")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error enviando alerta crítica: {e}")
 
 def main():
     """Función principal - FASE 1: MÉTRICAS"""
