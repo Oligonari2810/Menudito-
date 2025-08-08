@@ -1,1 +1,0 @@
-# Módulo de componentes mejorados del bot de trading 
