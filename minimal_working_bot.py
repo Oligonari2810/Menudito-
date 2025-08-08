@@ -105,7 +105,7 @@ class SafetyManager:
                 safety_status['can_trade'] = False
                 safety_status['reason'] = f"Drawdown intradía crítico: {self.intraday_drawdown:.2f}%"
                 
-            elif self.consecutive_losses >= 3:
+            elif self.consecutive_losses >= 3 and not self.probation_mode:
                 safety_status['can_trade'] = False
                 safety_status['reason'] = f"Racha de pérdidas: {self.consecutive_losses} consecutivas"
             
@@ -860,7 +860,8 @@ class ProfessionalTradingBot:
                 'market_data': market_conditions
             }
             
-            self.logger.info(f"📊 Señal: {direction} - {market_conditions.get('reason', 'Condiciones favorables')}")
+            friendly_reason = market_conditions.get('reason') or 'Condiciones favorables'
+            self.logger.info(f"📊 Señal: {direction} - {friendly_reason}")
             return signal_data
             
         except Exception as e:
