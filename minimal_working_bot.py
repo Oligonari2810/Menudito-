@@ -267,19 +267,20 @@ class SafetyManager:
         intended_price = trade_data.get('intended_price', 0.0)
         executed_price = trade_data.get('executed_price', 0.0)
         
-        # Calcular fees (entrada + salida)
-        fee_rate = self.fee_taker_bps / 10000  # convertir bps a decimal
+        # Calcular fees (entrada + salida) usando configuración FASE 1.6
+        fee_rate = config.FEE_TAKER_BPS / 10000  # convertir bps a decimal
         entry_fee = notional * fee_rate
         exit_fee = notional * fee_rate  # estimado para salida
         total_fees = entry_fee + exit_fee
         
-        # Calcular slippage
+        # Calcular slippage usando configuración FASE 1.6
         if intended_price > 0 and executed_price > 0:
             slippage_pct = abs(executed_price - intended_price) / intended_price
             slippage_cost = notional * slippage_pct
         else:
-            slippage_pct = 0.0
-            slippage_cost = 0.0
+            # Usar slippage estimado de configuración
+            slippage_pct = config.SLIPPAGE_BPS / 10000
+            slippage_cost = notional * slippage_pct
         
         # Convertir a bps para logging
         fees_bps = (total_fees / notional) * 10000 if notional > 0 else 0
@@ -1423,6 +1424,7 @@ class ProfessionalTradingBot:
             filter_result = self.safety_manager.pre_trade_filters(market_data)
             if not filter_result['passed']:
                 self.logger.info(f"❌ Trade rechazado por filtros: {filter_result['reason']}")
+                # NO registrar trade rechazado - solo retornar
                 return {
                     'executed': False,
                     'reason': f"Filtro fallido: {filter_result['reason']}",
@@ -1667,6 +1669,7 @@ class ProfessionalTradingBot:
                     )
             else:
                 self.logger.info(f"❌ Trade rechazado: {trade_result.get('reason', 'Desconocido')}")
+                # NO registrar trades rechazados en Google Sheets
             
             self.logger.info(f"✅ Ciclo {self.cycle_count} completado, esperando {self.update_interval}s...")
             
