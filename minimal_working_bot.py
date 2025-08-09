@@ -1978,7 +1978,7 @@ def main():
         # Configurar señales de apagado
         def signal_handler(signum, frame):
             logger.info("🛑 Señal de apagado recibida")
-                shutdown_state["stop"] = True
+            shutdown_state["stop"] = True
             bot.running = False
             
         signal.signal(signal.SIGTERM, signal_handler)
