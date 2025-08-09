@@ -1700,7 +1700,7 @@ class ProfessionalTradingBot:
                     
                     # Esperar entre ciclos
                     if not shutdown_state["stop"]:
-                    sleep_responsive(self.update_interval)
+                        sleep_responsive(self.update_interval)
                     
                 except KeyboardInterrupt:
                     self.logger.info("🛑 Interrupción manual recibida")
@@ -1736,10 +1736,10 @@ class ProfessionalTradingBot:
                 'session_start': self.session_start_time.isoformat(),
                 'session_end': datetime.now().isoformat(),
                 'initial_capital': 50.0,
-                    'final_capital': self.current_capital,
+                'final_capital': self.current_capital,
                 'total_trades': len(self.metrics_tracker.operations_history),
                 'win_rate': metrics['win_rate'],
-                    'profit_factor': self.metrics_tracker.get_profit_factor_display(),
+                'profit_factor': self.metrics_tracker.get_profit_factor_display(),
                 'drawdown': metrics['drawdown'],
                 'symbols_traded': list(set([t.get('symbol', 'UNKNOWN') for t in self.metrics_tracker.operations_history])),
                 'symbol_rotations': self.symbol_rotation_counter
@@ -1750,7 +1750,7 @@ class ProfessionalTradingBot:
             with open('session_summary.json', 'w') as f:
                 json.dump(session_summary, f, indent=2)
             
-                self.logger.info("✅ Resumen de sesión guardado en CSV")
+            self.logger.info("✅ Resumen de sesión guardado en CSV")
             self.logger.info("✅ Estado guardado correctamente")
             
             # Mensaje de cierre
