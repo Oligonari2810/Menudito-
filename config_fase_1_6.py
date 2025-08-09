@@ -33,11 +33,11 @@ class Fase16Config:
         self.FEE_TAKER_BPS = float(os.getenv('FEE_TAKER_BPS', '7.5'))
         self.FEE_MAKER_BPS = float(os.getenv('FEE_MAKER_BPS', '2.0'))
         self.SLIPPAGE_BPS = float(os.getenv('SLIPPAGE_BPS', '1.5'))
-        self.TP_BUFFER_BPS = float(os.getenv('TP_BUFFER_BPS', '2.0'))
+        self.TP_BUFFER_BPS = float(os.getenv('TP_BUFFER_BPS', '4.0'))  # Aumentado de 2.0 a 4.0
         
         # === FASE 1.6: OBJETIVOS DE SALIDA ===
         self.TP_MODE = os.getenv('TP_MODE', 'fixed_min')
-        self.TP_MIN_BPS = float(os.getenv('TP_MIN_BPS', '18.5'))
+        self.TP_MIN_BPS = float(os.getenv('TP_MIN_BPS', '22.0'))  # Aumentado de 18.5 a 22.0
         self.ATR_PERIOD = int(os.getenv('ATR_PERIOD', '14'))
         self.TP_ATR_MULT = float(os.getenv('TP_ATR_MULT', '0.50'))
         self.SL_ATR_MULT = float(os.getenv('SL_ATR_MULT', '0.40'))

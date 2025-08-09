@@ -1226,9 +1226,8 @@ class ProfessionalTradingBot:
             pnl_data = self.safety_manager.calculate_net_pnl(trade_data_for_pnl)
             pnl_net = pnl_data['net_pnl']
             
-            # Asegurar que el P&L neto sea visible incluso si es pequeño
-            if abs(pnl_net) < 0.01 and pnl_net != 0:
-                pnl_net = -0.01 if pnl_net < 0 else 0.01
+            # No forzar valores mínimos - usar P&L neto real
+            # El P&L neto ya incluye fees y slippage calculados correctamente
             
             # Actualizar capital
             new_capital = self.current_capital + pnl_net
