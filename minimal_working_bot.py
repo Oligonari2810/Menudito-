@@ -99,7 +99,7 @@ class SafetyManager:
         
         # Cooldown racha
         self.racha_cooldown_start = None
-        self.racha_cooldown_duration = 1800  # 30 minutos
+        self.racha_cooldown_duration = 600  # 10 minutos (reducido de 30)
         self.probation_mode = False
         self.probation_trades = 0
         self.max_probation_trades = 1
@@ -108,7 +108,7 @@ class SafetyManager:
         self.daily_loss_limit = float(os.getenv('DAILY_MAX_DRAWDOWN_PCT', '0.50')) / 100  # 0.5%
         self.intraday_drawdown_limit = 0.10  # 10%
         self.max_consecutive_losses = int(os.getenv('MAX_CONSECUTIVE_LOSSES', '2'))
-        self.min_cooldown_seconds = int(os.getenv('COOLDOWN_AFTER_LOSS_MIN', '30')) * 60
+        self.min_cooldown_seconds = int(os.getenv('COOLDOWN_AFTER_LOSS_MIN', '10')) * 60  # 10 minutos (reducido de 30)
         self.max_trades_per_hour = 20
         self.max_trades_per_day = int(os.getenv('MAX_TRADES_PER_DAY', '8'))
         
@@ -683,7 +683,8 @@ class MetricsTracker:
             # Manejar casos especiales
             if total_losses == 0:
                 if total_gains > 0:
-                    profit_factor = float('inf')  # Infinito para gains sin losses
+                    # Solo ganancias - mostrar como N/A en lugar de infinito
+                    profit_factor = 0.0  # Será manejado por get_profit_factor_display
                 else:
                     profit_factor = 0.0  # Sin operaciones
             elif total_gains == 0:
@@ -691,7 +692,12 @@ class MetricsTracker:
             else:
                 profit_factor = total_gains / total_losses
             
-            self.logger.info(f"📈 Profit Factor (neto) calculado: {profit_factor:.2f} (Gains: ${total_gains:.4f}, Losses: ${total_losses:.4f})")
+            # Log sin mostrar infinito
+            if total_losses == 0 and total_gains > 0:
+                self.logger.info(f"📈 Profit Factor (neto) calculado: N/A (Gains: ${total_gains:.4f}, Losses: $0.0000)")
+            else:
+                self.logger.info(f"📈 Profit Factor (neto) calculado: {profit_factor:.2f} (Gains: ${total_gains:.4f}, Losses: ${total_losses:.4f})")
+            
             return profit_factor
             
         except Exception as e:
@@ -703,10 +709,14 @@ class MetricsTracker:
         try:
             pf = self.calculate_profit_factor()
             
-            if pf == float('inf'):
-                return "N/A"
+            # Verificar si hay solo ganancias sin pérdidas
+            total_gains = sum(op.get('pnl_net', 0) for op in self.operations_history if op.get('pnl_net', 0) > 0)
+            total_losses = abs(sum(op.get('pnl_net', 0) for op in self.operations_history if op.get('pnl_net', 0) < 0))
+            
+            if total_losses == 0 and total_gains > 0:
+                return "N/A"  # Solo ganancias
             elif pf == 0.0:
-                return "N/A"
+                return "N/A"  # Sin operaciones o solo pérdidas
             else:
                 return f"{pf:.2f}"
                 
@@ -1333,7 +1343,7 @@ class ProfessionalTradingBot:
                 min_price, max_price = price_ranges[current_symbol]
                 current_price = random.uniform(min_price, max_price)
             else:
-                current_price = random.uniform(500, 650)
+            current_price = random.uniform(500, 650)
             
             volume = random.uniform(1000, 5000)
             
@@ -1603,7 +1613,7 @@ class ProfessionalTradingBot:
 🔄 **Multi-Par**:
 📊 **Símbolo**: {current_symbol}
 🔄 **Rotación**: {self.symbol_rotation_counter}
-            """
+"""
             self.send_telegram_message(telegram_message)
             
             return {
@@ -1690,8 +1700,8 @@ class ProfessionalTradingBot:
                     
                     # Esperar entre ciclos
                     if not shutdown_state["stop"]:
-                        sleep_responsive(self.update_interval)
-                        
+                    sleep_responsive(self.update_interval)
+                    
                 except KeyboardInterrupt:
                     self.logger.info("🛑 Interrupción manual recibida")
                     break
@@ -1726,10 +1736,10 @@ class ProfessionalTradingBot:
                 'session_start': self.session_start_time.isoformat(),
                 'session_end': datetime.now().isoformat(),
                 'initial_capital': 50.0,
-                'final_capital': self.current_capital,
+                    'final_capital': self.current_capital,
                 'total_trades': len(self.metrics_tracker.operations_history),
                 'win_rate': metrics['win_rate'],
-                'profit_factor': self.metrics_tracker.get_profit_factor_display(),
+                    'profit_factor': self.metrics_tracker.get_profit_factor_display(),
                 'drawdown': metrics['drawdown'],
                 'symbols_traded': list(set([t.get('symbol', 'UNKNOWN') for t in self.metrics_tracker.operations_history])),
                 'symbol_rotations': self.symbol_rotation_counter
@@ -1740,7 +1750,7 @@ class ProfessionalTradingBot:
             with open('session_summary.json', 'w') as f:
                 json.dump(session_summary, f, indent=2)
             
-            self.logger.info("✅ Resumen de sesión guardado en CSV")
+                self.logger.info("✅ Resumen de sesión guardado en CSV")
             self.logger.info("✅ Estado guardado correctamente")
             
             # Mensaje de cierre
@@ -1770,7 +1780,7 @@ class ProfessionalTradingBot:
             
         except Exception as e:
             self.logger.error(f"❌ Error guardando estado: {e}")
-
+    
 class TelemetryManager:
     """Sistema de telemetría y alertas"""
     
@@ -1968,12 +1978,12 @@ def main():
         # Configurar señales de apagado
         def signal_handler(signum, frame):
             logger.info("🛑 Señal de apagado recibida")
-            shutdown_state["stop"] = True
+                shutdown_state["stop"] = True
             bot.running = False
-        
+            
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
-        
+            
         # Iniciar bot
         bot.start()
         

@@ -55,8 +55,8 @@ class Fase16Config:
         self.DAILY_MAX_DRAWDOWN_PCT = float(os.getenv('DAILY_MAX_DRAWDOWN_PCT', '0.50'))  # 0.5% bloqueado
         self.WEEKLY_MAX_DRAWDOWN_PCT = float(os.getenv('WEEKLY_MAX_DRAWDOWN_PCT', '1.50'))
         self.MAX_CONSECUTIVE_LOSSES = int(os.getenv('MAX_CONSECUTIVE_LOSSES', '2'))
-        self.MAX_TRADES_PER_DAY = int(os.getenv('MAX_TRADES_PER_DAY', '6'))  # Reducido a 6
-        self.COOLDOWN_AFTER_LOSS_MIN = int(os.getenv('COOLDOWN_AFTER_LOSS_MIN', '30'))
+        self.MAX_TRADES_PER_DAY = int(os.getenv('MAX_TRADES_PER_DAY', '8'))  # Aumentado a 8
+        self.COOLDOWN_AFTER_LOSS_MIN = int(os.getenv('COOLDOWN_AFTER_LOSS_MIN', '10'))  # 10 minutos (reducido de 30)
         
         # === FASE 1.6: FEES/SLIPPAGE (V1 BLOQUEADA) ===
         self.FEE_TAKER_BPS = float(os.getenv('FEE_TAKER_BPS', '7.5'))
