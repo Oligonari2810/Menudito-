@@ -246,7 +246,7 @@ class SafetyManager:
         
         return filter_result
     
-    def calculate_fees_and_slippage(self, trade_data: Dict) -> Dict[str, float]:
+    def calculate_fees_and_slippage(self, trade_data: Dict[str, Any]) -> Dict[str, float]:
         """FASE 1.6: Calcular fees y slippage realistas"""
         
         notional = trade_data.get('notional', 0.0)
@@ -282,7 +282,7 @@ class SafetyManager:
             'total_friction': total_fees + slippage_cost
         }
     
-    def calculate_net_pnl(self, trade_data: Dict) -> Dict[str, float]:
+    def calculate_net_pnl(self, trade_data: Dict[str, Any]) -> Dict[str, float]:
         """FASE 1.6: Calcular P&L neto incluyendo fees y slippage"""
         
         # P&L bruto
@@ -303,7 +303,7 @@ class SafetyManager:
             'friction_impact': (friction_data['total_friction'] / abs(gross_pnl) * 100) if gross_pnl != 0 else 0
         }
     
-    def check_safety_conditions(self, current_capital: float) -> Dict:
+    def check_safety_conditions(self, current_capital: float) -> Dict[str, Any]:
         """Verificar todas las condiciones de seguridad"""
         try:
             # Calcular métricas de seguridad
@@ -378,7 +378,7 @@ class SafetyManager:
         except Exception as e:
             self.logger.error(f"❌ Error verificando cooldown racha: {e}")
     
-    def record_trade(self, result: str, pnl: float):
+    def record_trade(self, result: str, pnl: float) -> None:
         """Registrar resultado de trade para métricas de seguridad"""
         try:
             self.last_trade_time = datetime.now()
@@ -445,7 +445,7 @@ class MarketFilter:
         self.spread_epsilon = 0.00001
         self.maker_only_enabled = True
         
-    def check_market_conditions(self, price: float, volume: float) -> Dict:
+    def check_market_conditions(self, price: float, volume: float) -> Dict[str, Any]:
         """Verificar condiciones de mercado para operar"""
         try:
             # Simular indicadores técnicos
@@ -532,7 +532,7 @@ class PositionManager:
         self.spread_adaptive_on = True  # Spread adaptativo
         self.enable_parallel_pairs = []  # Solo BNBUSDT
         
-    def calculate_position_size(self, capital: float, atr_value: float) -> Dict:
+    def calculate_position_size(self, capital: float, atr_value: float) -> Dict[str, Any]:
         """Calcular tamaño de posición basado en ATR"""
         try:
             # Tamaño base (0.6% del capital)
@@ -572,7 +572,7 @@ class PositionManager:
             self.logger.error(f"❌ Error calculando tamaño: {e}")
             return {'size': 0, 'fees': 0, 'size_net': 0}
     
-    def calculate_sl_tp(self, entry_price: float, direction: str, atr_value: float) -> Dict:
+    def calculate_sl_tp(self, entry_price: float, direction: str, atr_value: float) -> Dict[str, Any]:
         """Calcular SL y TP basados en ATR"""
         try:
             # SL y TP basados en ATR
@@ -616,7 +616,7 @@ class MetricsTracker:
         self.current_capital = 50.0
         self.fees_included = True
         
-    def add_operation(self, operation: Dict):
+    def add_operation(self, operation: Dict[str, Any]) -> None:
         """Añadir operación al historial"""
         try:
             # Añadir operación
@@ -713,7 +713,7 @@ class MetricsTracker:
             self.logger.error(f"❌ Error calculando Drawdown: {e}")
             return 0.0
     
-    def get_metrics_summary(self) -> Dict:
+    def get_metrics_summary(self) -> Dict[str, Any]:
         """Obtener resumen de métricas"""
         try:
             win_rate = self.calculate_win_rate()
@@ -778,7 +778,7 @@ class GoogleSheetsLogger:
             self.logger.error(f"❌ Error configurando Google Sheets: {e}")
             self.sheets_enabled = False
     
-    def log_trade(self, trade_data: Dict, metrics: Dict = None) -> bool:
+    def log_trade(self, trade_data: Dict[str, Any], metrics: Dict[str, Any] = None) -> bool:
         """Log trade a Google Sheets con métricas"""
         try:
             if not self.sheets_enabled:
@@ -851,7 +851,7 @@ class GoogleSheetsLogger:
             self.logger.error(f"❌ Error registrando trade FASE 1.6 en Sheets: {e}")
             return False
     
-    def log_telemetry(self, telemetry_data: Dict) -> bool:
+    def log_telemetry(self, telemetry_data: Dict[str, Any]) -> bool:
         """Log telemetría a Google Sheets"""
         try:
             if not self.sheets_enabled:
@@ -924,7 +924,7 @@ class LocalLogger:
         except Exception as e:
             self.logger.error(f"❌ Error creando directorio: {e}")
     
-    def log_operation(self, trade_data: Dict) -> bool:
+    def log_operation(self, trade_data: Dict[str, Any]) -> bool:
         """Registrar operación localmente"""
         try:
             import json
@@ -1069,7 +1069,7 @@ class ProfessionalTradingBot:
         except Exception as e:
             self.logger.error(f"❌ Error enviando mensaje Telegram FASE 1.6: {e}")
     
-    def simulate_trading_signal(self) -> Dict:
+    def simulate_trading_signal(self) -> Dict[str, Any]:
         """Simular señal de trading con filtros de mercado"""
         try:
             # Simular precio actual (BNB/USDT)
@@ -1113,7 +1113,7 @@ class ProfessionalTradingBot:
             self.logger.error(f"❌ Error generando señal FASE 1.6: {e}")
             return {'signal': 'ERROR', 'reason': str(e)}
     
-    def simulate_trade(self, signal: Dict) -> Dict:
+    def simulate_trade(self, signal: Dict[str, Any]) -> Dict[str, Any]:
         """FASE 1.6: Simular ejecución de trade con gestión de riesgo mejorada"""
         try:
             if signal['signal'] in ['REJECTED', 'ERROR']:
