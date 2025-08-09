@@ -485,8 +485,8 @@ class MarketFilter:
                 'spread_adaptive': self.spread_adaptive_on
             }
             
-            # Filtro ATR (volatilidad mínima) con umbral dinámico 40–50%
-            atr_min_dynamic = 0.40 + (0.10 * random.random())  # 0.40–0.50
+            # Filtro ATR (volatilidad mínima) con umbral dinámico 32–40% (REDUCIDO de 40-50%)
+            atr_min_dynamic = 0.32 + (0.08 * random.random())  # 0.32–0.40 (reducido de 0.40-0.50)
             if atr_value < atr_min_dynamic:
                 filter_status['can_trade'] = False
                 filter_status['reason'] = f"Volatilidad insuficiente: ATR={atr_value:.3f} (<{atr_min_dynamic:.3f})"

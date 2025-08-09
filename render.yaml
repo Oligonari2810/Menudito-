@@ -42,7 +42,7 @@ services:
       - key: CAND_MIN_24H_VOLUME_USD
         value: "100000000"
       - key: CAND_MIN_ATR_BPS
-        value: "15.0"
+        value: "12.0"
       - key: CAND_MAX_SPREAD_BPS
         value: "2.0"
       - key: CAND_MIN_TREND_SCORE

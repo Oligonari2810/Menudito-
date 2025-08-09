@@ -31,9 +31,9 @@ class AutoPairSelector:
         self.rebalance_minutes = int(os.getenv('REBALANCE_MINUTES', '60'))
         self.lookback_hours = int(os.getenv('LOOKBACK_HOURS', '24'))
         
-        # === FILTROS MÍNIMOS ===
+        # === AUTO PAIR SELECTOR: FILTROS MÍNIMOS ===
         self.cand_min_24h_volume_usd = float(os.getenv('CAND_MIN_24H_VOLUME_USD', '100000000'))  # 100M USD
-        self.cand_min_atr_bps = float(os.getenv('CAND_MIN_ATR_BPS', '15.0'))  # 0.15%
+        self.cand_min_atr_bps = float(os.getenv('CAND_MIN_ATR_BPS', '12.0'))  # 0.12% (REDUCIDO de 15.0)
         self.cand_max_spread_bps = float(os.getenv('CAND_MAX_SPREAD_BPS', '2.0'))  # 0.02%
         self.cand_min_trend_score = float(os.getenv('CAND_MIN_TREND_SCORE', '0.60'))  # 0.6
         self.cand_max_correlation = float(os.getenv('CAND_MAX_CORRELATION', '0.85'))  # 0.85

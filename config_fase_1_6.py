@@ -27,7 +27,7 @@ class Fase16Config:
         self.CURRENT_SYMBOL_INDEX = 0  # Índice del símbolo actual
         
         # === AUTO PAIR SELECTOR ===
-        self.AUTO_PAIR_SELECTOR = os.getenv('AUTO_PAIR_SELECTOR', 'false').lower() == 'true'
+        self.AUTO_PAIR_SELECTOR = os.getenv('AUTO_PAIR_SELECTOR', 'true').lower() == 'true'  # ACTIVADO
         self.PAIRS_CANDIDATES = os.getenv('PAIRS_CANDIDATES', 'BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOGEUSDT,LINKUSDT,TONUSDT,MATICUSDT,ARBUSDT,OPUSDT,LTCUSDT,APTUSDT,TRXUSDT').split(',')
         self.MAX_ACTIVE_PAIRS = int(os.getenv('MAX_ACTIVE_PAIRS', '4'))
         self.REBALANCE_MINUTES = int(os.getenv('REBALANCE_MINUTES', '60'))
@@ -35,7 +35,7 @@ class Fase16Config:
         
         # === AUTO PAIR SELECTOR: FILTROS MÍNIMOS ===
         self.CAND_MIN_24H_VOLUME_USD = float(os.getenv('CAND_MIN_24H_VOLUME_USD', '100000000'))  # 100M USD
-        self.CAND_MIN_ATR_BPS = float(os.getenv('CAND_MIN_ATR_BPS', '15.0'))  # 0.15%
+        self.CAND_MIN_ATR_BPS = float(os.getenv('CAND_MIN_ATR_BPS', '12.0'))  # 0.12% (REDUCIDO de 15.0)
         self.CAND_MAX_SPREAD_BPS = float(os.getenv('CAND_MAX_SPREAD_BPS', '2.0'))  # 0.02%
         self.CAND_MIN_TREND_SCORE = float(os.getenv('CAND_MIN_TREND_SCORE', '0.60'))  # 0.6
         self.CAND_MAX_CORRELATION = float(os.getenv('CAND_MAX_CORRELATION', '0.85'))  # 0.85
@@ -75,7 +75,7 @@ class Fase16Config:
         self.MIN_RANGE_BPS = float(os.getenv('MIN_RANGE_BPS', '5.0'))  # 5.0 bloqueado
         self.MAX_SPREAD_BPS = float(os.getenv('MAX_SPREAD_BPS', '2.0'))  # 2.0 bloqueado
         self.MIN_VOL_USD = float(os.getenv('MIN_VOL_USD', '5000000'))  # 5M bloqueado
-        self.ATR_MIN_PCT = float(os.getenv('ATR_MIN_PCT', '0.041'))  # 0.041% bloqueado
+        self.ATR_MIN_PCT = float(os.getenv('ATR_MIN_PCT', '0.033'))  # 0.033% (REDUCIDO de 0.041)
         
         # === FASE 1.6: LATENCIA/ESTABILIDAD (V1 BLOQUEADA) ===
         self.MAX_WS_LATENCY_MS = float(os.getenv('MAX_WS_LATENCY_MS', '1500'))  # 1500ms bloqueado
@@ -102,10 +102,18 @@ class Fase16Config:
         self.READY_TO_SCALE_THRESHOLD_DD = float(os.getenv('READY_TO_SCALE_THRESHOLD_DD', '0.5'))
         self.READY_TO_SCALE = os.getenv('READY_TO_SCALE', 'false').lower() == 'true'
         
-        # === FASE 1.6: OPCIONALES ===
-        self.BREAKEVEN_ENABLED = os.getenv('BREAKEVEN_ENABLED', 'false').lower() == 'true'
+        # === FASE 1.6: RESUMEN DIARIO ===
         self.DAILY_SUMMARY_ENABLED = os.getenv('DAILY_SUMMARY_ENABLED', 'true').lower() == 'true'
         self.DAILY_SUMMARY_TIME = os.getenv('DAILY_SUMMARY_TIME', '22:05 Europe/Madrid')
+        
+        # === FASE 1.6: OPCIONALES ===
+        self.BREAKEVEN_ENABLED = os.getenv('BREAKEVEN_ENABLED', 'false').lower() == 'true'
+        
+        # === FASE 1.6: CONFIGURACIÓN ADICIONAL ===
+        self.CYCLE_INTERVAL_SECONDS = int(os.getenv('CYCLE_INTERVAL_SECONDS', '180'))
+        self.MAKER_ONLY = os.getenv('MAKER_ONLY', 'true').lower() == 'true'
+        self.SPREAD_ADAPTIVE = os.getenv('SPREAD_ADAPTIVE', 'true').lower() == 'true'
+        self.POSITION_SIZE_USD_MIN = float(os.getenv('POSITION_SIZE_USD_MIN', '2.00'))
         
         # === FASE 1.6: CREDENCIALES ===
         self.BINANCE_API_KEY = os.getenv('BINANCE_API_KEY', 'your_api_key_here')
