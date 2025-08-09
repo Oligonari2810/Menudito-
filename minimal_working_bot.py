@@ -1343,7 +1343,7 @@ class ProfessionalTradingBot:
                 min_price, max_price = price_ranges[current_symbol]
                 current_price = random.uniform(min_price, max_price)
             else:
-            current_price = random.uniform(500, 650)
+                current_price = random.uniform(500, 650)
             
             volume = random.uniform(1000, 5000)
             
