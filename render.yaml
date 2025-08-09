@@ -76,9 +76,9 @@ services:
       - key: MAX_CONSECUTIVE_LOSSES
         value: "2"
       - key: MAX_TRADES_PER_DAY
-        value: "6"
+        value: "8"
       - key: COOLDOWN_AFTER_LOSS_MIN
-        value: "30"
+        value: "5"
       
       # === FASE 1.6: FEES/SLIPPAGE (V1 BLOQUEADA) ===
       - key: FEE_TAKER_BPS
@@ -110,7 +110,7 @@ services:
       - key: MIN_VOL_USD
         value: "5000000"
       - key: ATR_MIN_PCT
-        value: "0.041"
+        value: "0.033"
       
       # === FASE 1.6: LATENCIA/ESTABILIDAD (V1 BLOQUEADA) ===
       - key: MAX_WS_LATENCY_MS

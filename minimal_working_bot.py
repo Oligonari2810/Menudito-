@@ -99,7 +99,7 @@ class SafetyManager:
         
         # Cooldown racha
         self.racha_cooldown_start = None
-        self.racha_cooldown_duration = 600  # 10 minutos (reducido de 30)
+        self.racha_cooldown_duration = 300  # 5 minutos (reducido de 10)
         self.probation_mode = False
         self.probation_trades = 0
         self.max_probation_trades = 1
@@ -108,7 +108,7 @@ class SafetyManager:
         self.daily_loss_limit = float(os.getenv('DAILY_MAX_DRAWDOWN_PCT', '0.50')) / 100  # 0.5%
         self.intraday_drawdown_limit = 0.10  # 10%
         self.max_consecutive_losses = int(os.getenv('MAX_CONSECUTIVE_LOSSES', '2'))
-        self.min_cooldown_seconds = int(os.getenv('COOLDOWN_AFTER_LOSS_MIN', '10')) * 60  # 10 minutos (reducido de 30)
+        self.min_cooldown_seconds = int(os.getenv('COOLDOWN_AFTER_LOSS_MIN', '5')) * 60  # 5 minutos (reducido de 10)
         self.max_trades_per_hour = 20
         self.max_trades_per_day = int(os.getenv('MAX_TRADES_PER_DAY', '8'))
         
@@ -486,12 +486,13 @@ class MarketFilter:
                 'spread_adaptive': self.spread_adaptive_on
             }
             
-            # Filtro ATR (volatilidad mínima) con umbral dinámico 32–40% (REDUCIDO de 40-50%)
-            atr_min_dynamic = 0.32 + (0.08 * random.random())  # 0.32–0.40 (reducido de 0.40-0.50)
+            # Filtro ATR (volatilidad mínima) con umbral dinámico 0.033-0.050% (REDUCIDO)
+            atr_min_dynamic = 0.033 + (0.017 * random.random())  # 0.033–0.050 (reducido de 0.32-0.40)
             if atr_value < atr_min_dynamic:
                 filter_status['can_trade'] = False
                 filter_status['reason'] = f"Volatilidad insuficiente: ATR={atr_value:.3f} (<{atr_min_dynamic:.3f})"
-                filter_status['reason_code'] = 'low_vol'
+                filter_status['reason_code'] = 'low_volatility'
+                return filter_status
             
             # Filtro EMA50 (tendencia)
             if price > ema_value:
@@ -513,7 +514,7 @@ class MarketFilter:
     
     def simulate_atr(self, price: float) -> float:
         """Simular valor ATR"""
-        return random.uniform(0.3, 0.8)
+        return random.uniform(0.033, 0.8)  # Rango realista: 0.033% - 0.8%
     
     def simulate_ema(self, price: float) -> float:
         """Simular valor EMA50"""
