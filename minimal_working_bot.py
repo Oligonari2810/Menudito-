@@ -27,12 +27,15 @@ logging.basicConfig(
 
 # Variable global para control de apagado (mutable)
 shutdown_state = {"stop": False}
+shutdown_flag = False  # Variable adicional para compatibilidad
 
 def handle_shutdown_signal(signum, frame):
     """Manejar señales de apagado de manera limpia"""
     signal_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
     logging.info(f"🛑 {signal_name} recibido → Iniciando apagado limpio...")
     shutdown_state["stop"] = True
+    global shutdown_flag
+    shutdown_flag = True
 
 # Configurar señales
 signal.signal(signal.SIGTERM, handle_shutdown_signal)
@@ -41,7 +44,7 @@ signal.signal(signal.SIGINT, handle_shutdown_signal)
 def sleep_responsive(seconds: int):
     """Dormir en bloques de 1s, saliendo en <1s si llega señal de apagado"""
     remaining = int(seconds)
-    while remaining > 0 and not shutdown_state["stop"]:
+    while remaining > 0 and not shutdown_state["stop"] and not shutdown_flag:
         time.sleep(1)
         remaining -= 1
 
@@ -950,10 +953,14 @@ class ProfessionalTradingBot:
             pnl_net = pnl_gross - total_fees
             
             # Asegurar que el P&L neto sea consistente con el resultado
-            if is_win and pnl_net <= 0:
-                pnl_net = 0.005  # Ganancia mínima neta
-            elif not is_win and pnl_net >= 0:
-                pnl_net = -0.005  # Pérdida mínima neta
+            if is_win:
+                # Para trades ganadores, asegurar P&L neto positivo
+                if pnl_net <= 0:
+                    pnl_net = 0.005  # Ganancia mínima neta
+            else:
+                # Para trades perdedores, asegurar P&L neto negativo
+                if pnl_net >= 0:
+                    pnl_net = -0.005  # Pérdida mínima neta
             
             # Actualizar capital
             new_capital = self.current_capital + pnl_net
@@ -1318,7 +1325,9 @@ class TelemetryManager:
 def main():
     """Función principal - FASE 1.5 PATCHED"""
     # Inicializar variables de shutdown para evitar errores
+    global shutdown_flag
     shutdown_state["stop"] = False
+    shutdown_flag = False
     
     try:
         # Parsear argumentos
@@ -1353,16 +1362,23 @@ def main():
                 if not shutdown_state["stop"]:
                     logging.info("🛑 Iniciando apagado limpio...")
                     shutdown_state["stop"] = True
+                    shutdown_flag = True
                 
                 logging.info("✅ Bot terminado correctamente")
             except Exception as e:
                 logging.error(f"❌ Error durante apagado: {e}")
             finally:
-                sys.exit(0)
+                try:
+                    sys.exit(0)
+                except:
+                    pass
             
     except Exception as e:
         logging.error(f"❌ Error crítico: {e}")
-        sys.exit(1)
+        try:
+            sys.exit(1)
+        except:
+            pass
 
 if __name__ == "__main__":
     main()
