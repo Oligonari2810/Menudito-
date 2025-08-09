@@ -46,7 +46,7 @@ def sleep_responsive(seconds: int):
         remaining -= 1
 
 class SafetyManager:
-    """Sistema de gestión de seguridad y protecciones"""
+    """Sistema de gestión de seguridad y protecciones FASE 1.6"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -66,14 +66,219 @@ class SafetyManager:
         self.probation_trades = 0
         self.max_probation_trades = 1
         
-        # Límites de seguridad
-        self.daily_loss_limit = 0.03  # 3%
+        # === FASE 1.6: LÍMITES DE SEGURIDAD ACTUALIZADOS ===
+        self.daily_loss_limit = float(os.getenv('DAILY_MAX_DRAWDOWN_PCT', '0.50')) / 100  # 0.5%
         self.intraday_drawdown_limit = 0.10  # 10%
-        self.max_consecutive_losses = 3
-        self.min_cooldown_seconds = 60  # Reducido de 90s a 60s
+        self.max_consecutive_losses = int(os.getenv('MAX_CONSECUTIVE_LOSSES', '2'))
+        self.min_cooldown_seconds = int(os.getenv('COOLDOWN_AFTER_LOSS_MIN', '30')) * 60
         self.max_trades_per_hour = 20
-        self.max_trades_per_day = 160
+        self.max_trades_per_day = int(os.getenv('MAX_TRADES_PER_DAY', '8'))
         
+        # === FASE 1.6: CONFIGURACIÓN DE FEES/SLIPPAGE ===
+        self.fee_taker_bps = float(os.getenv('FEE_TAKER_BPS', '7.5'))
+        self.fee_maker_bps = float(os.getenv('FEE_MAKER_BPS', '2.0'))
+        self.slippage_bps = float(os.getenv('SLIPPAGE_BPS', '1.5'))
+        self.tp_buffer_bps = float(os.getenv('TP_BUFFER_BPS', '2.0'))
+        
+        # === FASE 1.6: OBJETIVOS DE SALIDA ===
+        self.tp_mode = os.getenv('TP_MODE', 'fixed_min')
+        self.tp_min_bps = float(os.getenv('TP_MIN_BPS', '18.5'))
+        self.atr_period = int(os.getenv('ATR_PERIOD', '14'))
+        self.tp_atr_mult = float(os.getenv('TP_ATR_MULT', '0.50'))
+        self.sl_atr_mult = float(os.getenv('SL_ATR_MULT', '0.40'))
+        
+        # === FASE 1.6: FILTROS DE ENTRADA ===
+        self.min_range_bps = float(os.getenv('MIN_RANGE_BPS', '5.0'))
+        self.max_spread_bps = float(os.getenv('MAX_SPREAD_BPS', '2.0'))
+        self.min_vol_usd = float(os.getenv('MIN_VOL_USD', '5000000'))
+        
+        # === FASE 1.6: LATENCIA/ESTABILIDAD ===
+        self.max_ws_latency_ms = float(os.getenv('MAX_WS_LATENCY_MS', '1500'))
+        self.max_rest_latency_ms = float(os.getenv('MAX_REST_LATENCY_MS', '800'))
+        self.retry_order = int(os.getenv('RETRY_ORDER', '2'))
+        
+    def compute_trade_targets(self, price: float, atr_value: float = None) -> Dict[str, float]:
+        """FASE 1.6: Calcular TP y SL dinámicos con fricción"""
+        
+        # Calcular fricción total
+        fee_bps = max(self.fee_taker_bps, self.fee_maker_bps)
+        fric_bps = 2 * fee_bps + self.slippage_bps  # entrada + salida + slippage
+        tp_floor = fric_bps + self.tp_buffer_bps
+        
+        if self.tp_mode == "fixed_min":
+            # Modo TP fijo mínimo
+            tp_bps = max(self.tp_min_bps, tp_floor)
+            sl_bps = tp_bps / 1.25  # RR ≈ 1.25:1
+        else:
+            # Modo ATR dinámico
+            if atr_value is None:
+                atr_value = price * 0.01  # 1% por defecto
+            
+            atr_pct = (atr_value / price) * 100 * 100  # convertir a bps
+            tp_bps = max(self.tp_atr_mult * atr_pct, tp_floor)
+            sl_bps = max(self.sl_atr_mult * atr_pct, tp_floor / 1.25)
+        
+        return {
+            'tp_bps': tp_bps,
+            'sl_bps': sl_bps,
+            'tp_floor': tp_floor,
+            'fric_bps': fric_bps,
+            'rr_ratio': tp_bps / sl_bps if sl_bps > 0 else 0,
+            'tp_pct': tp_bps / 10000,  # convertir a porcentaje
+            'sl_pct': sl_bps / 10000   # convertir a porcentaje
+        }
+    
+    def pre_trade_filters(self, market_data: Dict) -> Dict[str, Any]:
+        """FASE 1.6: Aplicar filtros previos al trade"""
+        
+        filter_result = {
+            'passed': True,
+            'reason': 'OK',
+            'details': {},
+            'warnings': []
+        }
+        
+        # Extraer datos del mercado
+        current_price = market_data.get('price', 0.0)
+        high = market_data.get('high', current_price)
+        low = market_data.get('low', current_price)
+        close = market_data.get('close', current_price)
+        best_ask = market_data.get('best_ask', current_price)
+        best_bid = market_data.get('best_bid', current_price)
+        volume_usd = market_data.get('volume_usd', 0.0)
+        ws_latency_ms = market_data.get('ws_latency_ms', 0.0)
+        rest_latency_ms = market_data.get('rest_latency_ms', 0.0)
+        
+        # 1. Filtro de rango de vela
+        if close > 0:
+            range_pct = ((high - low) / close) * 100
+            range_bps = range_pct * 100  # convertir a bps
+            
+            filter_result['details']['range_pct'] = range_pct
+            filter_result['details']['range_bps'] = range_bps
+            
+            if range_bps < self.min_range_bps:
+                filter_result['passed'] = False
+                filter_result['reason'] = 'LOW_RANGE'
+                filter_result['details']['min_range_bps'] = self.min_range_bps
+                self.logger.info(f"❌ Trade rechazado: Rango bajo {range_bps:.1f} bps < {self.min_range_bps} bps")
+                return filter_result
+        else:
+            filter_result['passed'] = False
+            filter_result['reason'] = 'INVALID_PRICE'
+            return filter_result
+        
+        # 2. Filtro de spread
+        if best_ask > 0 and best_bid > 0:
+            mid_price = (best_ask + best_bid) / 2
+            spread_pct = ((best_ask - best_bid) / mid_price) * 100
+            spread_bps = spread_pct * 100  # convertir a bps
+            
+            filter_result['details']['spread_pct'] = spread_pct
+            filter_result['details']['spread_bps'] = spread_bps
+            
+            if spread_bps > self.max_spread_bps:
+                filter_result['passed'] = False
+                filter_result['reason'] = 'HIGH_SPREAD'
+                filter_result['details']['max_spread_bps'] = self.max_spread_bps
+                self.logger.info(f"❌ Trade rechazado: Spread alto {spread_bps:.1f} bps > {self.max_spread_bps} bps")
+                return filter_result
+        else:
+            filter_result['warnings'].append("Spread no disponible")
+        
+        # 3. Filtro de volumen
+        filter_result['details']['volume_usd'] = volume_usd
+        
+        if volume_usd < self.min_vol_usd:
+            filter_result['passed'] = False
+            filter_result['reason'] = 'LOW_VOLUME'
+            filter_result['details']['min_vol_usd'] = self.min_vol_usd
+            self.logger.info(f"❌ Trade rechazado: Volumen bajo ${volume_usd:,.0f} < ${self.min_vol_usd:,.0f}")
+            return filter_result
+        
+        # 4. Filtro de latencia WebSocket
+        filter_result['details']['ws_latency_ms'] = ws_latency_ms
+        
+        if ws_latency_ms > self.max_ws_latency_ms:
+            filter_result['passed'] = False
+            filter_result['reason'] = 'HIGH_WS_LAT'
+            filter_result['details']['max_ws_latency_ms'] = self.max_ws_latency_ms
+            self.logger.info(f"❌ Trade rechazado: Latencia WS alta {ws_latency_ms:.1f}ms > {self.max_ws_latency_ms}ms")
+            return filter_result
+        
+        # 5. Filtro de latencia REST
+        filter_result['details']['rest_latency_ms'] = rest_latency_ms
+        
+        if rest_latency_ms > self.max_rest_latency_ms:
+            filter_result['passed'] = False
+            filter_result['reason'] = 'HIGH_REST_LAT'
+            filter_result['details']['max_rest_latency_ms'] = self.max_rest_latency_ms
+            self.logger.info(f"❌ Trade rechazado: Latencia REST alta {rest_latency_ms:.1f}ms > {self.max_rest_latency_ms}ms")
+            return filter_result
+        
+        # Si pasa todos los filtros
+        if filter_result['passed']:
+            self.logger.info(f"✅ Filtros pasados: Rango={range_bps:.1f}bps, Spread={spread_bps:.1f}bps, Vol=${volume_usd:,.0f}")
+        
+        return filter_result
+    
+    def calculate_fees_and_slippage(self, trade_data: Dict) -> Dict[str, float]:
+        """FASE 1.6: Calcular fees y slippage realistas"""
+        
+        notional = trade_data.get('notional', 0.0)
+        intended_price = trade_data.get('intended_price', 0.0)
+        executed_price = trade_data.get('executed_price', 0.0)
+        
+        # Calcular fees (entrada + salida)
+        fee_rate = self.fee_taker_bps / 10000  # convertir bps a decimal
+        entry_fee = notional * fee_rate
+        exit_fee = notional * fee_rate  # estimado para salida
+        total_fees = entry_fee + exit_fee
+        
+        # Calcular slippage
+        if intended_price > 0 and executed_price > 0:
+            slippage_pct = abs(executed_price - intended_price) / intended_price
+            slippage_cost = notional * slippage_pct
+        else:
+            slippage_pct = 0.0
+            slippage_cost = 0.0
+        
+        # Convertir a bps para logging
+        fees_bps = (total_fees / notional) * 10000 if notional > 0 else 0
+        slippage_bps = slippage_pct * 10000
+        
+        return {
+            'entry_fee': entry_fee,
+            'exit_fee': exit_fee,
+            'total_fees': total_fees,
+            'fees_bps': fees_bps,
+            'slippage_cost': slippage_cost,
+            'slippage_bps': slippage_bps,
+            'slippage_pct': slippage_pct,
+            'total_friction': total_fees + slippage_cost
+        }
+    
+    def calculate_net_pnl(self, trade_data: Dict) -> Dict[str, float]:
+        """FASE 1.6: Calcular P&L neto incluyendo fees y slippage"""
+        
+        # P&L bruto
+        gross_pnl = trade_data.get('realized_pnl', 0.0)
+        
+        # Calcular fees y slippage
+        friction_data = self.calculate_fees_and_slippage(trade_data)
+        
+        # P&L neto
+        net_pnl = gross_pnl - friction_data['total_friction']
+        
+        return {
+            'gross_pnl': gross_pnl,
+            'net_pnl': net_pnl,
+            'fees_cost': friction_data['total_fees'],
+            'slippage_cost': friction_data['slippage_cost'],
+            'total_friction': friction_data['total_friction'],
+            'friction_impact': (friction_data['total_friction'] / abs(gross_pnl) * 100) if gross_pnl != 0 else 0
+        }
+    
     def check_safety_conditions(self, current_capital: float) -> Dict:
         """Verificar todas las condiciones de seguridad"""
         try:
@@ -96,8 +301,8 @@ class SafetyManager:
                 'hourly_trades': self.hourly_trades
             }
             
-            # Kill switches
-            if self.daily_loss >= 3.0:
+            # Kill switches FASE 1.6
+            if self.daily_loss >= (self.daily_loss_limit * 100):
                 safety_status['can_trade'] = False
                 safety_status['reason'] = f"Pérdida diaria crítica: {self.daily_loss:.2f}%"
                 
@@ -573,38 +778,53 @@ class GoogleSheetsLogger:
                     'drawdown': 0.0
                 }
             
-            # Crear fila de datos (Date, Time en columnas separadas)
+            # Crear fila de datos FASE 1.6 (Date, Time en columnas separadas)
             row_data = [
                 date_part,                 # Fecha
                 time_part,                 # Hora
                 trade_data.get('symbol', 'BNBUSDT'),  # Símbolo
                 trade_data.get('direction', ''),      # Dirección
-                f"${trade_data.get('entry_price', 0):,.2f}",  # Precio
+                f"${trade_data.get('entry_price', 0):,.2f}",  # Precio Entrada
                 f"{trade_data.get('size', 0):.6f}",           # Cantidad
-                f"${trade_data.get('size', 0) * trade_data.get('entry_price', 0):.2f}",  # Valor
+                f"${trade_data.get('notional', 0):.2f}",      # Monto
                 trade_data.get('strategy', 'breakout'),        # Estrategia
                 f"{trade_data.get('confidence', 0):.1%}",     # Confianza
-                trade_data.get('phase', 'FASE 1.5 PATCHED'),   # Fase
+                "✅" if trade_data.get('ai_validation', True) else "❌",  # IA Validación
                 trade_data.get('result', ''),                  # Resultado
-                f"${trade_data.get('pnl_net', 0):.3f}",       # P&L
-                f"${trade_data.get('capital', 0):.2f}",       # Capital
-                f"{metrics.get('win_rate', 0):.2f}%",         # Win Rate
-                f"{metrics.get('profit_factor', 0):.2f}",     # Profit Factor
-                f"{metrics.get('drawdown', 0):.2f}%",         # Drawdown
-                trade_data.get('atr_value', 0),                # ATR
-                trade_data.get('sl_price', 0),                 # SL
-                trade_data.get('tp_price', 0),                 # TP
-                trade_data.get('fees', 0),                     # Fees
-                trade_data.get('pnl_gross', 0)                 # P&L Bruto
+                f"${trade_data.get('net_pnl', 0):.4f}",       # P&L Neto
+                f"${trade_data.get('capital', 0):.2f}",       # Balance
+                f"{metrics.get('win_rate', 0):.2f}%",         # Win Rate (%)
+                metrics.get('profit_factor_display', 'N/A'),   # Profit Factor
+                f"{metrics.get('drawdown', 0):.2f}%",         # Drawdown (%)
+                f"{trade_data.get('signal_score', 0):.2f}",   # Signal Score
+                f"${trade_data.get('expected_price', 0):.4f}", # Expected Price
+                f"${trade_data.get('fill_price', 0):.4f}",    # Fill Price
+                f"{trade_data.get('tick_size', 0):.4f}",      # Tick Size
+                f"{trade_data.get('slippage_pct', 0):.4f}%",  # Slippage (%)
+                
+                # === FASE 1.6: NUEVAS COLUMNAS ===
+                f"{trade_data.get('tp_bps', 0):.1f}",         # TP (bps)
+                f"{trade_data.get('sl_bps', 0):.1f}",         # SL (bps)
+                f"{trade_data.get('range_bps', 0):.1f}",      # Range (bps)
+                f"{trade_data.get('spread_bps', 0):.1f}",     # Spread (bps)
+                f"{trade_data.get('fees_bps', 0):.1f}",       # Fee (bps)
+                f"${trade_data.get('fees_cost', 0):.4f}",     # Est. Fee (USD)
+                f"{trade_data.get('slippage_bps', 0):.1f}",   # Slippage (bps)
+                f"${trade_data.get('gross_pnl', 0):.4f}",     # PnL Bruto (USD)
+                f"${trade_data.get('net_pnl', 0):.4f}",       # PnL Neto (USD)
+                f"{trade_data.get('rr_ratio', 0):.2f}",       # RR
+                f"{trade_data.get('atr_pct', 0):.2f}%",      # ATR (%)
+                
+                trade_data.get('phase', 'FASE 1.6')           # Fase
             ]
             
             # Añadir fila
             worksheet.append_row(row_data)
-            self.logger.info("✅ Trade registrado en Google Sheets con métricas (Fecha y Hora separadas)")
+            self.logger.info("✅ Trade FASE 1.6 registrado en Google Sheets con métricas mejoradas")
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Error registrando trade en Sheets: {e}")
+            self.logger.error(f"❌ Error registrando trade FASE 1.6 en Sheets: {e}")
             return False
     
     def log_telemetry(self, telemetry_data: Dict) -> bool:
@@ -660,7 +880,7 @@ class GoogleSheetsLogger:
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Error registrando telemetría en Sheets: {e}")
+            self.logger.error(f"❌ Error registrando telemetría FASE 1.6 en Sheets: {e}")
             return False
 
 class LocalLogger:
@@ -772,32 +992,33 @@ class ProfessionalTradingBot:
         self.logger.info("✅ Google Sheets habilitado")
         self.logger.info("✅ Directorio de datos creado: trading_data")
         self.logger.info("✅ Logging local habilitado")
-        self.logger.info("🚀 Iniciando bot profesional - FASE 1.5 PATCHED...")
+        self.logger.info("🚀 Iniciando bot profesional - FASE 1.6...")
         
-        # Mensaje de inicio
+        # Mensaje de inicio FASE 1.6
         startup_message = f"""
-🤖 BOT PROFESIONAL - FASE 1.5 PATCHED
+🤖 BOT PROFESIONAL - FASE 1.6
 
-📊 Configuración Optimizada:
+📊 Configuración Mejorada:
 ⏱️ Intervalo: {self.update_interval}s
 💰 Capital inicial: ${self.current_capital:.2f}
 🛡️ Sistema de seguridad activo
-📈 Métricas netas de fees
-🎯 Filtros de mercado activos
-📊 Telemetría cada 5 min
-🚨 Alertas críticas activas
+📈 P&L neto con fees/slippage
+🎯 Filtros avanzados: Rango/Spread/Vol
+📊 Telemetría FASE 1.6
+🚨 Kill-switches mejorados
 
-⚙️ Nuevas Configuraciones:
-💰 Tamaño mínimo: $2.00 USD
-⏱️ Cooldown: 60s (reducido)
-📊 Spread adaptativo: 0.03% → 0.04-0.05%
-🔒 Maker-only: activado
-📈 Rate limit: 20/hora, 160/día
+⚙️ Nuevas Configuraciones FASE 1.6:
+💰 TP mínimo: >fricción (18.5 bps)
+🎯 RR: 1.25:1 garantizado
+📊 Filtros: MIN_RANGE=5bps, MAX_SPREAD=2bps
+📈 Fees: Taker=7.5bps, Maker=2bps
+⏱️ Latencia: REST<800ms, WS<1500ms
+🔒 Posición: 0.1% equity (micro)
 
-🚀 Listo para sesión de 4h en testnet
+🚀 Listo para sesión con FASE 1.6
 """
         self.send_telegram_message(startup_message)
-        self.logger.info("✅ Bot profesional - FASE 1.5 PATCHED iniciado correctamente")
+        self.logger.info("✅ Bot profesional - FASE 1.6 iniciado correctamente")
     
     def send_telegram_message(self, message: str):
         """Enviar mensaje a Telegram"""
@@ -822,7 +1043,7 @@ class ProfessionalTradingBot:
                 self.logger.warning("⚠️ Credenciales Telegram no configuradas")
                 
         except Exception as e:
-            self.logger.error(f"❌ Error enviando mensaje Telegram: {e}")
+            self.logger.error(f"❌ Error enviando mensaje Telegram FASE 1.6: {e}")
     
     def simulate_trading_signal(self) -> Dict:
         """Simular señal de trading con filtros de mercado"""
@@ -865,11 +1086,11 @@ class ProfessionalTradingBot:
             return signal_data
             
         except Exception as e:
-            self.logger.error(f"❌ Error generando señal: {e}")
+            self.logger.error(f"❌ Error generando señal FASE 1.6: {e}")
             return {'signal': 'ERROR', 'reason': str(e)}
     
     def simulate_trade(self, signal: Dict) -> Dict:
-        """Simular ejecución de trade con gestión de riesgo"""
+        """FASE 1.6: Simular ejecución de trade con gestión de riesgo mejorada"""
         try:
             if signal['signal'] in ['REJECTED', 'ERROR']:
                 # Registrar rechazo por seguridad
@@ -898,10 +1119,37 @@ class ProfessionalTradingBot:
                     'safety_status': safety_status
                 }
             
+            # === FASE 1.6: APLICAR FILTROS PRE-TRADE ===
+            market_data = {
+                'price': signal['price'],
+                'high': signal['price'] * (1 + random.uniform(0.005, 0.02)),
+                'low': signal['price'] * (1 - random.uniform(0.005, 0.02)),
+                'close': signal['price'],
+                'best_ask': signal['price'] * 1.0001,
+                'best_bid': signal['price'] * 0.9999,
+                'volume_usd': random.uniform(5000000, 15000000),
+                'ws_latency_ms': random.uniform(50, 200),
+                'rest_latency_ms': random.uniform(100, 500)
+            }
+            
+            # Aplicar filtros
+            filter_result = self.safety_manager.pre_trade_filters(market_data)
+            if not filter_result['passed']:
+                self.logger.info(f"❌ Trade rechazado por filtros: {filter_result['reason']}")
+                return {
+                    'executed': False,
+                    'reason': f"Filtro fallido: {filter_result['reason']}",
+                    'signal': signal,
+                    'filter_result': filter_result
+                }
+            
             # Obtener datos de mercado
             entry_price = signal['price']
             direction = signal['signal']
             atr_value = signal['market_data']['atr']
+            
+            # === FASE 1.6: CALCULAR TARGETS DINÁMICOS ===
+            targets = self.safety_manager.compute_trade_targets(entry_price, atr_value)
             
             # Calcular tamaño de posición
             position_data = self.position_manager.calculate_position_size(self.current_capital, atr_value)
@@ -911,26 +1159,48 @@ class ProfessionalTradingBot:
                 position_data['size'] = max(self.position_manager.position_size_usd_min, position_data['size'] * 0.5)
                 position_data['fees'] = position_data['size'] * self.position_manager.fee_rate
             
-            # Calcular SL/TP
-            sl_tp_data = self.position_manager.calculate_sl_tp(entry_price, direction, atr_value)
+            # === FASE 1.6: SIMULAR EJECUCIÓN CON SLIPPAGE REALISTA ===
+            slippage_bps = random.uniform(1.0, 3.0)  # 1-3 bps
+            slippage_pct = slippage_bps / 10000
+            if direction == 'BUY':
+                executed_price = entry_price * (1 + slippage_pct)
+            else:
+                executed_price = entry_price * (1 - slippage_pct)
             
-            # Simular resultado del trade
-            win_probability = 0.52  # Win rate objetivo
+            # === FASE 1.6: SIMULAR RESULTADO BASADO EN TARGETS ===
+            win_probability = 0.6  # 60% win rate
             is_win = random.random() < win_probability
             
-            # Calcular P&L
+            # Calcular P&L bruto basado en targets
             if is_win:
-                # Ganancia basada en TP
-                pnl_gross = position_data['size'] * (sl_tp_data['tp_price'] - entry_price) / entry_price
+                # Ganancia basada en TP dinámico
+                tp_pct = targets['tp_pct']
+                if direction == 'BUY':
+                    exit_price = executed_price * (1 + tp_pct)
+                else:
+                    exit_price = executed_price * (1 - tp_pct)
+                pnl_gross = position_data['size'] * (exit_price - executed_price) / executed_price
                 result = 'GANANCIA'
             else:
-                # Pérdida basada en SL
-                pnl_gross = position_data['size'] * (sl_tp_data['sl_price'] - entry_price) / entry_price
+                # Pérdida basada en SL dinámico
+                sl_pct = targets['sl_pct']
+                if direction == 'BUY':
+                    exit_price = executed_price * (1 - sl_pct)
+                else:
+                    exit_price = executed_price * (1 + sl_pct)
+                pnl_gross = position_data['size'] * (exit_price - executed_price) / executed_price
                 result = 'PÉRDIDA'
             
-            # Calcular P&L neto de fees con mayor precisión
-            total_fees = position_data['fees'] * 2  # Entrada y salida
-            pnl_net = pnl_gross - total_fees
+            # === FASE 1.6: CALCULAR P&L NETO CON FEES/SLIPPAGE ===
+            trade_data_for_pnl = {
+                'notional': position_data['size'],
+                'intended_price': entry_price,
+                'executed_price': executed_price,
+                'realized_pnl': pnl_gross
+            }
+            
+            pnl_data = self.safety_manager.calculate_net_pnl(trade_data_for_pnl)
+            pnl_net = pnl_data['net_pnl']
             
             # Asegurar que el P&L neto sea visible incluso si es pequeño
             if abs(pnl_net) < 0.01 and pnl_net != 0:
@@ -943,30 +1213,72 @@ class ProfessionalTradingBot:
             # Registrar trade en sistema de seguridad
             self.safety_manager.record_trade(result, pnl_net)
             
-            # Crear datos del trade
+            # === FASE 1.6: CREAR DATOS DEL TRADE MEJORADOS ===
             trade_data = {
                 'timestamp': datetime.now().isoformat(),
                 'symbol': 'BNBUSDT',
                 'direction': direction,
-                'entry_price': entry_price,
+                'entry_price': executed_price,
+                'exit_price': exit_price,
                 'size': position_data['size'],
-                'fees': total_fees,
-                'pnl_gross': pnl_gross,
-                'pnl_net': pnl_net,
+                'notional': position_data['size'],
+                'gross_pnl': pnl_gross,
+                'net_pnl': pnl_net,
                 'result': result,
                 'capital': new_capital,
                 'capital_net': new_capital,
                 'atr_value': atr_value,
-                'sl_price': sl_tp_data['sl_price'],
-                'tp_price': sl_tp_data['tp_price'],
                 'confidence': signal['confidence'],
                 'strategy': 'breakout',
-                'phase': 'FASE 1.5 PATCHED',
-                'safety_status': safety_status
+                'phase': 'FASE 1.6',
+                'safety_status': safety_status,
+                
+                # === FASE 1.6: NUEVAS MÉTRICAS ===
+                'tp_bps': targets['tp_bps'],
+                'sl_bps': targets['sl_bps'],
+                'tp_pct': targets['tp_pct'],
+                'sl_pct': targets['sl_pct'],
+                'rr_ratio': targets['rr_ratio'],
+                'fric_bps': targets['fric_bps'],
+                'tp_floor': targets['tp_floor'],
+                'fees_bps': pnl_data['fees_cost'] / position_data['size'] * 10000,
+                'slippage_bps': slippage_bps,
+                'range_bps': filter_result['details'].get('range_bps', 0),
+                'spread_bps': filter_result['details'].get('spread_bps', 0),
+                'atr_pct': (atr_value / entry_price) * 100,
+                
+                # Friction data
+                'fees_cost': pnl_data['fees_cost'],
+                'slippage_cost': pnl_data['slippage_cost'],
+                'total_friction': pnl_data['total_friction'],
+                'friction_impact': pnl_data['friction_impact'],
+                
+                # Market data
+                'spread_at_execution': filter_result['details'].get('spread_pct', 0) * 100,
+                'volume_at_execution': filter_result['details'].get('volume_usd', 0),
+                'range_at_execution': filter_result['details'].get('range_pct', 0),
+                
+                # Legacy fields for compatibility
+                'fees': pnl_data['fees_cost'],
+                'pnl_gross': pnl_gross,
+                'pnl_net': pnl_net,
+                'sl_price': exit_price if not is_win else None,
+                'tp_price': exit_price if is_win else None
             }
             
             # Añadir a métricas
             self.metrics_tracker.add_operation(trade_data)
+            
+            # Log FASE 1.6
+            self.logger.info(f"📊 Trade FASE 1.6: {result} | TP={targets['tp_pct']:.4f}% | SL={targets['sl_pct']:.4f}% | RR={targets['rr_ratio']:.2f}")
+            self.logger.info(f"💰 P&L: Bruto=${pnl_gross:.4f} | Neto=${pnl_net:.4f} | Friction=${pnl_data['total_friction']:.4f}")
+            
+            return {
+                'executed': True,
+                'trade_data': trade_data,
+                'targets': targets,
+                'filter_result': filter_result
+            }
             
             # Obtener métricas actualizadas
             metrics = self.metrics_tracker.get_metrics_summary()
@@ -975,15 +1287,19 @@ class ProfessionalTradingBot:
             self.sheets_logger.log_trade(trade_data, metrics)
             self.local_logger.log_operation(trade_data)
             
-            # Mensaje Telegram con PF "N/A"
+            # Mensaje Telegram FASE 1.6
             telegram_message = f"""
-🤖 BOT PROFESIONAL - FASE 1.5 PATCHED
+🤖 BOT PROFESIONAL - FASE 1.6
 
 💰 Trade: {direction} BNBUSDT
 💵 Precio: ${entry_price:,.2f}
 📊 Resultado: {result}
-💸 P&L: ${pnl_net:.3f}
-🏦 Capital: ${new_capital:.2f}
+💸 P&L Neto: ${pnl_net:.4f}
+
+📈 Targets FASE 1.6:
+🎯 TP: {trade_data.get('tp_pct', 0):.4f}% ({trade_data.get('tp_bps', 0):.1f} bps)
+🎯 SL: {trade_data.get('sl_pct', 0):.4f}% ({trade_data.get('sl_bps', 0):.1f} bps)
+📊 RR: {trade_data.get('rr_ratio', 0):.2f}:1
 
 📈 Métricas:
 📊 Win Rate: {metrics['win_rate']:.2f}%
@@ -1006,7 +1322,7 @@ class ProfessionalTradingBot:
             }
             
         except Exception as e:
-            self.logger.error(f"❌ Error ejecutando trade: {e}")
+            self.logger.error(f"❌ Error ejecutando trade FASE 1.6: {e}")
             return {'executed': False, 'reason': str(e)}
     
     def run_trading_cycle(self):
@@ -1025,8 +1341,8 @@ class ProfessionalTradingBot:
             trade_result = self.simulate_trade(signal)
             
             if trade_result['executed']:
-                self.logger.info(f"✅ Trade ejecutado: {trade_result['trade_data']['direction']} @ ${trade_result['trade_data']['entry_price']:.2f}")
-                self.logger.info(f"📊 Métricas: WR={trade_result['metrics']['win_rate']:.2f}%, PF={self.metrics_tracker.get_profit_factor_display()}, DD={trade_result['metrics']['drawdown']:.2f}%")
+                self.logger.info(f"✅ Trade FASE 1.6 ejecutado: {trade_result['trade_data']['direction']} @ ${trade_result['trade_data']['entry_price']:.2f}")
+                self.logger.info(f"📊 Métricas FASE 1.6: WR={trade_result['metrics']['win_rate']:.2f}%, PF={self.metrics_tracker.get_profit_factor_display()}, DD={trade_result['metrics']['drawdown']:.2f}%")
             else:
                 self.logger.info(f"❌ Trade rechazado: {trade_result['reason']}")
             
@@ -1037,7 +1353,7 @@ class ProfessionalTradingBot:
             self.logger.info(f"✅ Ciclo {self.cycle_count} completado, esperando {self.update_interval}s...")
             
         except Exception as e:
-            self.logger.error(f"❌ Error en ciclo de trading: {e}")
+            self.logger.error(f"❌ Error en ciclo de trading FASE 1.6: {e}")
     
     def start(self):
         """Iniciar bot de trading"""
@@ -1065,28 +1381,30 @@ class ProfessionalTradingBot:
                     self.logger.info("🛑 Interrupción manual recibida")
                     break
                 except Exception as e:
-                    self.logger.error(f"❌ Error en bucle principal: {e}")
+                    self.logger.error(f"❌ Error en bucle principal FASE 1.6: {e}")
                     sleep_responsive(60)  # Esperar antes de reintentar, pero de forma responsiva
             
             # Apagado limpio
             self.save_state_and_close()
             
-            # Mensaje de cierre
+            # Mensaje de cierre FASE 1.6
             final_message = f"""
-🤖 BOT PROFESIONAL - CERRANDO
+🤖 BOT PROFESIONAL - FASE 1.6
 
-📊 Resumen Final:
+🛑 **APAGADO COMPLETADO**
+
+📊 **RESUMEN FINAL FASE 1.6:**
 🔄 Ciclos ejecutados: {self.cycle_count}
 💰 Capital final: ${self.current_capital:.2f}
 📈 P&L: ${self.current_capital - 50.0:.2f}
 
-✅ Bot cerrado correctamente
+✅ Bot FASE 1.6 cerrado correctamente
 """
             self.send_telegram_message(final_message)
-            self.logger.info("✅ Bot cerrado correctamente")
+            self.logger.info("✅ Bot FASE 1.6 cerrado correctamente")
             
         except Exception as e:
-            self.logger.error(f"❌ Error iniciando bot: {e}")
+            self.logger.error(f"❌ Error iniciando bot FASE 1.6: {e}")
     
     def save_state_and_close(self):
         """Guardar estado y cerrar conexiones"""
@@ -1147,7 +1465,7 @@ class ProfessionalTradingBot:
             self.logger.info("✅ Estado guardado correctamente")
             
         except Exception as e:
-            self.logger.error(f"❌ Error guardando estado: {e}")
+            self.logger.error(f"❌ Error guardando estado FASE 1.6: {e}")
     
 class TelemetryManager:
     """Sistema de telemetría y alertas"""
@@ -1300,7 +1618,7 @@ def main():
     """Función principal - FASE 1.5 PATCHED"""
     try:
         # Parsear argumentos
-        parser = argparse.ArgumentParser(description='Trading Bot Profesional - FASE 1.5 PATCHED')
+        parser = argparse.ArgumentParser(description='Trading Bot Profesional - FASE 1.6')
         parser.add_argument('--mode', default='testnet', choices=['testnet', 'live'], 
                           help='Modo de operación (testnet/live)')
         parser.add_argument('--config', default='config_survivor_final.py',
@@ -1311,7 +1629,7 @@ def main():
         args = parser.parse_args()
         
         # Configurar logging
-        logging.info(f"🚀 Iniciando Trading Bot - FASE 1.5 PATCHED")
+        logging.info(f"🚀 Iniciando Trading Bot - FASE 1.6")
         logging.info(f"📊 Modo: {args.mode}")
         logging.info(f"⚙️ Configuración: {args.config}")
         logging.info(f"🎯 Estrategia: {args.strategy}")
@@ -1335,7 +1653,7 @@ def main():
             sys.exit(0)
             
     except Exception as e:
-        logging.error(f"❌ Error crítico: {e}")
+        logging.error(f"❌ Error crítico en main FASE 1.6: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
