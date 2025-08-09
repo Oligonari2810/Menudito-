@@ -99,7 +99,7 @@ class SafetyManager:
         
         # Cooldown racha
         self.racha_cooldown_start = None
-        self.racha_cooldown_duration = 300  # 5 minutos (reducido de 10)
+        self.racha_cooldown_duration = 180  # 3 minutos (reducido de 5)
         self.probation_mode = False
         self.probation_trades = 0
         self.max_probation_trades = 1
@@ -108,7 +108,7 @@ class SafetyManager:
         self.daily_loss_limit = float(os.getenv('DAILY_MAX_DRAWDOWN_PCT', '0.50')) / 100  # 0.5%
         self.intraday_drawdown_limit = 0.10  # 10%
         self.max_consecutive_losses = int(os.getenv('MAX_CONSECUTIVE_LOSSES', '2'))
-        self.min_cooldown_seconds = int(os.getenv('COOLDOWN_AFTER_LOSS_MIN', '5')) * 60  # 5 minutos (reducido de 10)
+        self.min_cooldown_seconds = int(os.getenv('COOLDOWN_AFTER_LOSS_MIN', '2')) * 60  # 2 minutos (reducido de 5)
         self.max_trades_per_hour = 20
         self.max_trades_per_day = int(os.getenv('MAX_TRADES_PER_DAY', '8'))
         
@@ -486,11 +486,24 @@ class MarketFilter:
                 'spread_adaptive': self.spread_adaptive_on
             }
             
-            # Filtro ATR (volatilidad mínima) con umbral dinámico 0.033-0.050% (REDUCIDO)
+            # Filtro ATR (volatilidad mínima) con umbral dinámico y relajación
             atr_min_dynamic = 0.033 + (0.017 * random.random())  # 0.033–0.050 (reducido de 0.32-0.40)
-            if atr_value < atr_min_dynamic:
+            
+            # === FASE 1.6: ATR SUAVE ===
+            ATR_RELAX_FACTOR = 0.95
+            spread_bps = spread_value * 10000  # Convertir a bps
+            max_spread_bps = 2.0  # Config.MAX_SPREAD_BPS
+            
+            # Aplicar ATR suave si condiciones son favorables (spread bajo)
+            if spread_bps <= 0.6 * max_spread_bps:
+                atr_min_effective = atr_min_dynamic * ATR_RELAX_FACTOR
+                self.logger.info(f"🎯 ATR suave aplicado: {atr_min_dynamic:.3f} → {atr_min_effective:.3f} (spread={spread_bps:.1f} bps)")
+            else:
+                atr_min_effective = atr_min_dynamic
+            
+            if atr_value < atr_min_effective:
                 filter_status['can_trade'] = False
-                filter_status['reason'] = f"Volatilidad insuficiente: ATR={atr_value:.3f} (<{atr_min_dynamic:.3f})"
+                filter_status['reason'] = f"Volatilidad insuficiente: ATR={atr_value:.3f} (<{atr_min_effective:.3f})"
                 filter_status['reason_code'] = 'low_volatility'
                 return filter_status
             
@@ -1020,16 +1033,29 @@ class ProfessionalTradingBot:
         self.current_symbol_index = 0
         self.symbol_rotation_counter = 0
         
-        # === AUTO PAIR SELECTOR ===
+        # === FASE 1.6: AUTO PAIR SELECTOR ===
         self.auto_pair_selector = config.AUTO_PAIR_SELECTOR
         self.pair_selector = None
-        if self.auto_pair_selector and AUTO_PAIR_SELECTOR_AVAILABLE:
+        self.active_pairs = []
+        
+        # Inicializar Auto Pair Selector UNA SOLA VEZ
+        if self.auto_pair_selector:
             try:
-                self.pair_selector = init_pair_selector(config)
-                self.logger.info("🎯 Auto Pair Selector inicializado")
+                from pair_selector import PairSelector
+                self.pair_selector = PairSelector()
+                self.active_pairs = self.initialize_active_pairs()
+                if self.active_pairs:
+                    self.logger.info(f"🎯 Auto Pair Selector: ✅ ACTIVO - Pares activos: {', '.join(self.active_pairs)}")
+                else:
+                    self.logger.warning("🎯 Auto Pair Selector: ⚠️ INACTIVO - Usando pares por defecto")
+                    self.active_pairs = config.SYMBOLS[:config.MAX_ACTIVE_PAIRS]
             except Exception as e:
                 self.logger.error(f"❌ Error inicializando Auto Pair Selector: {e}")
+                self.active_pairs = config.SYMBOLS[:config.MAX_ACTIVE_PAIRS]
                 self.auto_pair_selector = False
+        else:
+            self.active_pairs = config.SYMBOLS[:config.MAX_ACTIVE_PAIRS]
+            self.logger.info(f"🎯 Auto Pair Selector: ❌ INACTIVO - Usando pares por defecto: {', '.join(self.active_pairs)}")
         
         # === FASE 1.6: RESUMEN DIARIO ===
         self.daily_summary_enabled = config.DAILY_SUMMARY_ENABLED
@@ -1051,9 +1077,6 @@ class ProfessionalTradingBot:
         self.update_interval = 180  # 3 minutos (configurable)
         self.session_start_time = datetime.now()
         
-        # Inicializar pares activos
-        self.active_pairs = self.initialize_active_pairs()
-        
         self.logger.info("🤖 BOT:")
         self.logger.info("✅ Sistema de métricas inicializado")
         self.logger.info("✅ Sistema de seguridad inicializado")
@@ -1064,12 +1087,6 @@ class ProfessionalTradingBot:
         self.logger.info("✅ Google Sheets habilitado")
         self.logger.info("✅ Directorio de datos creado: trading_data")
         self.logger.info("✅ Logging local habilitado")
-        
-        # Log Auto Pair Selector
-        if self.auto_pair_selector and self.pair_selector:
-            self.logger.info("🎯 Auto Pair Selector habilitado")
-        else:
-            self.logger.info("🎯 Auto Pair Selector deshabilitado (usando pares por defecto)")
         
         self.logger.info("🚀 Iniciando bot profesional - FASE 1.6 MULTI-PAR + AUTO PAIR SELECTOR...")
         
@@ -1119,18 +1136,15 @@ class ProfessionalTradingBot:
         """Inicializar pares activos usando Auto Pair Selector o fallback"""
         try:
             if self.auto_pair_selector and self.pair_selector:
-                self.logger.info("🎯 Inicializando pares activos con Auto Pair Selector...")
                 active_pairs = self.pair_selector.select_active_pairs()
                 
                 if active_pairs:
-                    self.logger.info(f"✅ Pares activos seleccionados: {', '.join(active_pairs)}")
                     return active_pairs
                 else:
                     self.logger.warning("⚠️ Auto Pair Selector no devolvió pares, usando fallback")
             
             # Fallback a configuración por defecto
             fallback_pairs = config.SYMBOLS[:config.MAX_ACTIVE_PAIRS]
-            self.logger.info(f"📊 Usando pares por defecto: {', '.join(fallback_pairs)}")
             return fallback_pairs
             
         except Exception as e:
@@ -1452,6 +1466,28 @@ class ProfessionalTradingBot:
             # === FASE 1.6: CALCULAR TARGETS DINÁMICOS ===
             targets = self.safety_manager.compute_trade_targets(entry_price, atr_value)
             
+            # === FASE 1.6: FILTRO DE EDGE ===
+            friccion_bps = targets['fric_bps']
+            tp_bps = targets['tp_bps']
+            edge_bps = tp_bps - friccion_bps
+            
+            # Configurar EDGE_MIN_BPS (3.0 bps mínimo)
+            EDGE_MIN_BPS = 3.0
+            
+            if edge_bps < EDGE_MIN_BPS:
+                self.logger.info(f"❌ Trade rechazado: Edge insuficiente: {edge_bps:.1f} bps (TP={tp_bps:.1f}, Fricción={friccion_bps:.1f})")
+                self.telemetry_manager.record_rejection('low_edge')
+                return {
+                    'executed': False,
+                    'reason': f"Edge insuficiente: {edge_bps:.1f} bps < {EDGE_MIN_BPS} bps",
+                    'signal': signal,
+                    'edge_bps': edge_bps,
+                    'tp_bps': tp_bps,
+                    'friccion_bps': friccion_bps
+                }
+            
+            self.logger.info(f"✅ Edge: {edge_bps:.1f} bps (TP={tp_bps:.1f}, Fricción={friccion_bps:.1f})")
+            
             # Calcular tamaño de posición
             position_data = self.position_manager.calculate_position_size(self.current_capital, atr_value)
             
@@ -1481,7 +1517,6 @@ class ProfessionalTradingBot:
                 else:
                     exit_price = executed_price * (1 - tp_pct)
                 pnl_gross = position_data['size'] * (exit_price - executed_price) / executed_price
-                result = 'GANANCIA'
             else:
                 # Pérdida basada en SL dinámico
                 sl_pct = targets['sl_pct']
@@ -1490,7 +1525,6 @@ class ProfessionalTradingBot:
                 else:
                     exit_price = executed_price * (1 + sl_pct)
                 pnl_gross = position_data['size'] * (exit_price - executed_price) / executed_price
-                result = 'PÉRDIDA'
             
             # === FASE 1.6: CALCULAR P&L NETO CON FEES/SLIPPAGE ===
             trade_data_for_pnl = {
@@ -1502,6 +1536,9 @@ class ProfessionalTradingBot:
             
             pnl_data = self.safety_manager.calculate_net_pnl(trade_data_for_pnl)
             pnl_net = pnl_data['net_pnl']
+            
+            # === FASE 1.6: DETERMINAR RESULTADO BASADO EN PnL NETO ===
+            result = "GANANCIA" if pnl_net > 0 else "PÉRDIDA"
             
             # No forzar valores mínimos - usar P&L neto real
             # El P&L neto ya incluye fees y slippage calculados correctamente

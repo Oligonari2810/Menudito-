@@ -78,7 +78,7 @@ services:
       - key: MAX_TRADES_PER_DAY
         value: "8"
       - key: COOLDOWN_AFTER_LOSS_MIN
-        value: "5"
+        value: "2"
       
       # === FASE 1.6: FEES/SLIPPAGE (V1 BLOQUEADA) ===
       - key: FEE_TAKER_BPS
