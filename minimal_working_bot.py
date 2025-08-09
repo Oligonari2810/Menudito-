@@ -1293,23 +1293,16 @@ class ProfessionalTradingBot:
             # Añadir a métricas
             self.metrics_tracker.add_operation(trade_data)
             
-            # Log FASE 1.6
-            self.logger.info(f"📊 Trade FASE 1.6: {result} | TP={targets['tp_pct']:.4f}% | SL={targets['sl_pct']:.4f}% | RR={targets['rr_ratio']:.2f}")
-            self.logger.info(f"💰 P&L: Bruto=${pnl_gross:.4f} | Neto=${pnl_net:.4f} | Friction=${pnl_data['total_friction']:.4f}")
-            
-            return {
-                'executed': True,
-                'trade_data': trade_data,
-                'targets': targets,
-                'filter_result': filter_result
-            }
-            
             # Obtener métricas actualizadas
             metrics = self.metrics_tracker.get_metrics_summary()
             
             # Logging
             self.sheets_logger.log_trade(trade_data, metrics)
             self.local_logger.log_operation(trade_data)
+            
+            # Log FASE 1.6
+            self.logger.info(f"📊 Trade FASE 1.6: {result} | TP={targets['tp_pct']:.4f}% | SL={targets['sl_pct']:.4f}% | RR={targets['rr_ratio']:.2f}")
+            self.logger.info(f"💰 P&L: Bruto=${pnl_gross:.4f} | Neto=${pnl_net:.4f} | Friction=${pnl_data['total_friction']:.4f}")
             
             # Mensaje Telegram FASE 1.6
             telegram_message = f"""
@@ -1342,7 +1335,9 @@ class ProfessionalTradingBot:
                 'executed': True,
                 'trade_data': trade_data,
                 'metrics': metrics,
-                'safety_status': safety_status
+                'safety_status': safety_status,
+                'targets': targets,
+                'filter_result': filter_result
             }
             
         except Exception as e:
@@ -1366,12 +1361,15 @@ class ProfessionalTradingBot:
             
             if trade_result['executed']:
                 self.logger.info(f"✅ Trade FASE 1.6 ejecutado: {trade_result['trade_data']['direction']} @ ${trade_result['trade_data']['entry_price']:.2f}")
-                self.logger.info(f"📊 Métricas FASE 1.6: WR={trade_result['metrics']['win_rate']:.2f}%, PF={self.metrics_tracker.get_profit_factor_display()}, DD={trade_result['metrics']['drawdown']:.2f}%")
+                if 'metrics' in trade_result:
+                    self.logger.info(f"📊 Métricas FASE 1.6: WR={trade_result['metrics']['win_rate']:.2f}%, PF={self.metrics_tracker.get_profit_factor_display()}, DD={trade_result['metrics']['drawdown']:.2f}%")
+                else:
+                    self.logger.info(f"📊 Métricas FASE 1.6: PF={self.metrics_tracker.get_profit_factor_display()}")
             else:
                 self.logger.info(f"❌ Trade rechazado: {trade_result['reason']}")
             
             # Enviar telemetría si es necesario
-            if trade_result['executed']:
+            if trade_result['executed'] and 'metrics' in trade_result:
                 self.telemetry_manager.send_telemetry(trade_result['metrics'], trade_result['safety_status'])
             
             self.logger.info(f"✅ Ciclo {self.cycle_count} completado, esperando {self.update_interval}s...")
