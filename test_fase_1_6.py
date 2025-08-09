@@ -8,7 +8,7 @@ import os
 import sys
 import logging
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Any, Optional
 
 # Configurar logging
 logging.basicConfig(

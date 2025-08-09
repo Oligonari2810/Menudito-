@@ -12,9 +12,33 @@ import random
 import argparse
 import sys
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Any, Optional
 from decimal import getcontext
 import requests
+
+# Importar configuración FASE 1.6
+try:
+    from config_fase_1_6 import config
+except ImportError:
+    # Fallback si no existe el archivo de configuración
+    class MockConfig:
+        def __init__(self):
+            self.FEE_TAKER_BPS = 7.5
+            self.FEE_MAKER_BPS = 2.0
+            self.SLIPPAGE_BPS = 1.5
+            self.TP_BUFFER_BPS = 2.0
+            self.TP_MODE = 'fixed_min'
+            self.TP_MIN_BPS = 18.5
+            self.ATR_PERIOD = 14
+            self.TP_ATR_MULT = 0.50
+            self.SL_ATR_MULT = 0.40
+            self.MIN_RANGE_BPS = 5.0
+            self.MAX_SPREAD_BPS = 2.0
+            self.MIN_VOL_USD = 5000000
+            self.MAX_WS_LATENCY_MS = 1500
+            self.MAX_REST_LATENCY_MS = 800
+            self.RETRY_ORDER = 2
+    config = MockConfig()
 
 # Configurar precisión decimal
 getcontext().prec = 8
@@ -74,28 +98,28 @@ class SafetyManager:
         self.max_trades_per_hour = 20
         self.max_trades_per_day = int(os.getenv('MAX_TRADES_PER_DAY', '8'))
         
-        # === FASE 1.6: CONFIGURACIÓN DE FEES/SLIPPAGE ===
-        self.fee_taker_bps = float(os.getenv('FEE_TAKER_BPS', '7.5'))
-        self.fee_maker_bps = float(os.getenv('FEE_MAKER_BPS', '2.0'))
-        self.slippage_bps = float(os.getenv('SLIPPAGE_BPS', '1.5'))
-        self.tp_buffer_bps = float(os.getenv('TP_BUFFER_BPS', '2.0'))
+        # === FASE 1.6: CONFIGURACIÓN CENTRALIZADA ===
+        self.fee_taker_bps = config.FEE_TAKER_BPS
+        self.fee_maker_bps = config.FEE_MAKER_BPS
+        self.slippage_bps = config.SLIPPAGE_BPS
+        self.tp_buffer_bps = config.TP_BUFFER_BPS
         
         # === FASE 1.6: OBJETIVOS DE SALIDA ===
-        self.tp_mode = os.getenv('TP_MODE', 'fixed_min')
-        self.tp_min_bps = float(os.getenv('TP_MIN_BPS', '18.5'))
-        self.atr_period = int(os.getenv('ATR_PERIOD', '14'))
-        self.tp_atr_mult = float(os.getenv('TP_ATR_MULT', '0.50'))
-        self.sl_atr_mult = float(os.getenv('SL_ATR_MULT', '0.40'))
+        self.tp_mode = config.TP_MODE
+        self.tp_min_bps = config.TP_MIN_BPS
+        self.atr_period = config.ATR_PERIOD
+        self.tp_atr_mult = config.TP_ATR_MULT
+        self.sl_atr_mult = config.SL_ATR_MULT
         
         # === FASE 1.6: FILTROS DE ENTRADA ===
-        self.min_range_bps = float(os.getenv('MIN_RANGE_BPS', '5.0'))
-        self.max_spread_bps = float(os.getenv('MAX_SPREAD_BPS', '2.0'))
-        self.min_vol_usd = float(os.getenv('MIN_VOL_USD', '5000000'))
+        self.min_range_bps = config.MIN_RANGE_BPS
+        self.max_spread_bps = config.MAX_SPREAD_BPS
+        self.min_vol_usd = config.MIN_VOL_USD
         
         # === FASE 1.6: LATENCIA/ESTABILIDAD ===
-        self.max_ws_latency_ms = float(os.getenv('MAX_WS_LATENCY_MS', '1500'))
-        self.max_rest_latency_ms = float(os.getenv('MAX_REST_LATENCY_MS', '800'))
-        self.retry_order = int(os.getenv('RETRY_ORDER', '2'))
+        self.max_ws_latency_ms = config.MAX_WS_LATENCY_MS
+        self.max_rest_latency_ms = config.MAX_REST_LATENCY_MS
+        self.retry_order = config.RETRY_ORDER
         
     def compute_trade_targets(self, price: float, atr_value: float = None) -> Dict[str, float]:
         """FASE 1.6: Calcular TP y SL dinámicos con fricción"""
@@ -128,7 +152,7 @@ class SafetyManager:
             'sl_pct': sl_bps / 10000   # convertir a porcentaje
         }
     
-    def pre_trade_filters(self, market_data: Dict) -> Dict[str, Any]:
+    def pre_trade_filters(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """FASE 1.6: Aplicar filtros previos al trade"""
         
         filter_result = {
