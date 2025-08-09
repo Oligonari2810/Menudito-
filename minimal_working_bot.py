@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-🤖 TRADING BOT PROFESIONAL - FASE 1.5: OPTIMIZACIÓN
-Bot de trading optimizado con sistema de métricas avanzado y gestión de riesgo mejorada
+🤖 TRADING BOT PROFESIONAL - FASE 1.6 MULTI-PAR + AUTO PAIR SELECTOR
+Bot de trading optimizado con sistema de métricas avanzado, gestión de riesgo mejorada
+y selección automática de mejores pares en tendencia
 """
 
 import os
@@ -38,7 +39,20 @@ except ImportError:
             self.MAX_WS_LATENCY_MS = 1500
             self.MAX_REST_LATENCY_MS = 800
             self.RETRY_ORDER = 2
+            # Auto Pair Selector
+            self.AUTO_PAIR_SELECTOR = False
+            self.PAIRS_CANDIDATES = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT']
+            self.MAX_ACTIVE_PAIRS = 4
+            self.REBALANCE_MINUTES = 60
     config = MockConfig()
+
+# Importar Auto Pair Selector
+try:
+    from pair_selector import AutoPairSelector, init_pair_selector, get_pair_selector
+    AUTO_PAIR_SELECTOR_AVAILABLE = True
+except ImportError:
+    AUTO_PAIR_SELECTOR_AVAILABLE = False
+    print("⚠️ Auto Pair Selector no disponible, usando configuración por defecto")
 
 # Configurar precisión decimal
 getcontext().prec = 8
@@ -981,13 +995,36 @@ class LocalLogger:
             return False
 
 class ProfessionalTradingBot:
-    """Bot de trading profesional con sistema de métricas y gestión de riesgo"""
+    """Bot de trading profesional con sistema de métricas y gestión de riesgo FASE 1.6 - MULTI-PAR + AUTO PAIR SELECTOR"""
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.running = True
         self.cycle_count = 0
         self.current_capital = 50.0
+        
+        # === FASE 1.6: MULTI-PAR CONFIGURACIÓN ===
+        self.symbols = config.SYMBOLS  # ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT']
+        self.current_symbol_index = 0
+        self.symbol_rotation_counter = 0
+        
+        # === AUTO PAIR SELECTOR ===
+        self.auto_pair_selector = config.AUTO_PAIR_SELECTOR
+        self.pair_selector = None
+        if self.auto_pair_selector and AUTO_PAIR_SELECTOR_AVAILABLE:
+            try:
+                self.pair_selector = init_pair_selector(config)
+                self.logger.info("🎯 Auto Pair Selector inicializado")
+            except Exception as e:
+                self.logger.error(f"❌ Error inicializando Auto Pair Selector: {e}")
+                self.auto_pair_selector = False
+        
+        # === FASE 1.6: RESUMEN DIARIO ===
+        self.daily_summary_enabled = config.DAILY_SUMMARY_ENABLED
+        self.daily_summary_time = config.DAILY_SUMMARY_TIME
+        self.last_daily_summary = None
+        self.daily_trades = []
+        self.daily_pnl_net = 0.0
         
         # Inicializar sistemas
         self.metrics_tracker = MetricsTracker()
@@ -1002,9 +1039,8 @@ class ProfessionalTradingBot:
         self.update_interval = 180  # 3 minutos (configurable)
         self.session_start_time = datetime.now()
         
-        # Configurar señales de interrupción
-        # signal.signal(signal.SIGINT, self.handle_shutdown) # Moved to top
-        # signal.signal(signal.SIGTERM, self.handle_shutdown) # Moved to top
+        # Inicializar pares activos
+        self.active_pairs = self.initialize_active_pairs()
         
         self.logger.info("🤖 BOT:")
         self.logger.info("✅ Sistema de métricas inicializado")
@@ -1016,33 +1052,134 @@ class ProfessionalTradingBot:
         self.logger.info("✅ Google Sheets habilitado")
         self.logger.info("✅ Directorio de datos creado: trading_data")
         self.logger.info("✅ Logging local habilitado")
-        self.logger.info("🚀 Iniciando bot profesional - FASE 1.6...")
         
-        # Mensaje de inicio FASE 1.6
+        # Log Auto Pair Selector
+        if self.auto_pair_selector and self.pair_selector:
+            self.logger.info("🎯 Auto Pair Selector habilitado")
+        else:
+            self.logger.info("🎯 Auto Pair Selector deshabilitado (usando pares por defecto)")
+        
+        self.logger.info("🚀 Iniciando bot profesional - FASE 1.6 MULTI-PAR + AUTO PAIR SELECTOR...")
+        
+        # Mensaje de inicio FASE 1.6 MULTI-PAR + AUTO PAIR SELECTOR
         startup_message = f"""
-🤖 BOT PROFESIONAL - FASE 1.6
+🤖 **BOT PROFESIONAL - FASE 1.6 MULTI-PAR + AUTO PAIR SELECTOR**
 
-📊 Configuración Mejorada:
-⏱️ Intervalo: {self.update_interval}s
-💰 Capital inicial: ${self.current_capital:.2f}
-🛡️ Sistema de seguridad activo
-📈 P&L neto con fees/slippage
-🎯 Filtros avanzados: Rango/Spread/Vol
-📊 Telemetría FASE 1.6
-🚨 Kill-switches mejorados
+📅 **Fecha**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🔄 **Modo**: {config.MODE}
+🛡️ **Shadow Mode**: {config.SHADOW_MODE}
 
-⚙️ Nuevas Configuraciones FASE 1.6:
-💰 TP mínimo: >fricción (18.5 bps)
-🎯 RR: 1.25:1 garantizado
-📊 Filtros: MIN_RANGE=5bps, MAX_SPREAD=2bps
-📈 Fees: Taker=7.5bps, Maker=2bps
-⏱️ Latencia: REST<800ms, WS<1500ms
-🔒 Posición: 0.1% equity (micro)
+📊 **Multi-Par Configuración**:
+🎯 **Símbolos**: {', '.join(self.symbols)}
+📊 **Actual**: {self.get_current_symbol()}
+🔄 **Rotación**: Cada 4 ciclos
 
-🚀 Listo para sesión con FASE 1.6
+🎯 **Auto Pair Selector**:
+{'✅ ACTIVO' if self.auto_pair_selector else '❌ INACTIVO'}
+📊 **Candidatos**: {len(config.PAIRS_CANDIDATES)} pares
+🎯 **Máximo activos**: {config.MAX_ACTIVE_PAIRS}
+🔄 **Rebalance**: {config.REBALANCE_MINUTES} min
+📊 **Pares activos**: {', '.join(self.active_pairs)}
+
+📈 **Targets FASE 1.6**:
+🎯 **TP Mínimo**: {config.TP_MIN_BPS} bps
+🎯 **TP Buffer**: {config.TP_BUFFER_BPS} bps
+📊 **RR Garantizado**: 1.25:1
+
+🛡️ **Seguridad**:
+📊 **DD Máximo**: {config.DAILY_MAX_DRAWDOWN_PCT}%
+📊 **Trades Máx/Día**: {config.MAX_TRADES_PER_DAY}
+📊 **Cooldown**: {config.COOLDOWN_AFTER_LOSS_MIN}min
+
+📊 **Filtros**:
+🎯 **Rango Mín**: {config.MIN_RANGE_BPS} bps
+🎯 **Spread Máx**: {config.MAX_SPREAD_BPS} bps
+🎯 **Vol Mín**: ${config.MIN_VOL_USD:,.0f}
+🎯 **ATR Mín**: {config.ATR_MIN_PCT}%
+
+---
+🚀 **¡Bot listo para operar!**
 """
         self.send_telegram_message(startup_message)
-        self.logger.info("✅ Bot profesional - FASE 1.6 iniciado correctamente")
+        self.logger.info("✅ Bot profesional - FASE 1.6 MULTI-PAR + AUTO PAIR SELECTOR iniciado correctamente")
+    
+    def initialize_active_pairs(self) -> List[str]:
+        """Inicializar pares activos usando Auto Pair Selector o fallback"""
+        try:
+            if self.auto_pair_selector and self.pair_selector:
+                self.logger.info("🎯 Inicializando pares activos con Auto Pair Selector...")
+                active_pairs = self.pair_selector.select_active_pairs()
+                
+                if active_pairs:
+                    self.logger.info(f"✅ Pares activos seleccionados: {', '.join(active_pairs)}")
+                    return active_pairs
+                else:
+                    self.logger.warning("⚠️ Auto Pair Selector no devolvió pares, usando fallback")
+            
+            # Fallback a configuración por defecto
+            fallback_pairs = config.SYMBOLS[:config.MAX_ACTIVE_PAIRS]
+            self.logger.info(f"📊 Usando pares por defecto: {', '.join(fallback_pairs)}")
+            return fallback_pairs
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error inicializando pares activos: {e}")
+            return config.SYMBOLS[:config.MAX_ACTIVE_PAIRS]
+    
+    def get_current_symbol(self) -> str:
+        """Obtener símbolo actual del multi-par"""
+        return self.symbols[self.current_symbol_index]
+    
+    def rotate_symbol(self) -> str:
+        """Rotar al siguiente símbolo del multi-par"""
+        self.current_symbol_index = (self.current_symbol_index + 1) % len(self.symbols)
+        self.symbol_rotation_counter += 1
+        new_symbol = self.get_current_symbol()
+        self.logger.info(f"🔄 Rotando símbolo: {new_symbol} (ciclo {self.symbol_rotation_counter})")
+        return new_symbol
+    
+    def should_rotate_symbol(self) -> bool:
+        """Verificar si debe rotar símbolo (cada 4 ciclos)"""
+        return self.cycle_count > 0 and self.cycle_count % 4 == 0
+    
+    def should_rebalance_pairs(self) -> bool:
+        """Verificar si debe rebalancear pares (Auto Pair Selector)"""
+        if not self.auto_pair_selector or not self.pair_selector:
+            return False
+        
+        try:
+            return self.pair_selector.should_rebalance()
+        except Exception as e:
+            self.logger.error(f"❌ Error verificando rebalance: {e}")
+            return False
+    
+    def rebalance_pairs(self) -> bool:
+        """Rebalancear pares activos usando Auto Pair Selector"""
+        try:
+            if not self.auto_pair_selector or not self.pair_selector:
+                return False
+            
+            self.logger.info("🔄 Iniciando rebalance de pares...")
+            new_active_pairs = self.pair_selector.select_active_pairs()
+            
+            if new_active_pairs and new_active_pairs != self.active_pairs:
+                old_pairs = ', '.join(self.active_pairs)
+                self.active_pairs = new_active_pairs
+                new_pairs = ', '.join(self.active_pairs)
+                
+                self.logger.info(f"🔄 Pares rebalanceados: {old_pairs} → {new_pairs}")
+                
+                # Loggear resumen del universo
+                if hasattr(self.pair_selector, 'log_universe_summary'):
+                    self.pair_selector.log_universe_summary()
+                
+                return True
+            else:
+                self.logger.info("📊 No se requirió rebalance (pares sin cambios)")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error rebalanceando pares: {e}")
+            return False
     
     def send_telegram_message(self, message: str):
         """Enviar mensaje a Telegram"""
@@ -1055,7 +1192,7 @@ class ProfessionalTradingBot:
                 data = {
                     'chat_id': chat_id,
                     'text': message,
-                    'parse_mode': 'HTML'
+                    'parse_mode': 'Markdown'
                 }
                 
                 response = requests.post(url, data=data, timeout=10)
@@ -1069,11 +1206,134 @@ class ProfessionalTradingBot:
         except Exception as e:
             self.logger.error(f"❌ Error enviando mensaje Telegram FASE 1.6: {e}")
     
-    def simulate_trading_signal(self) -> Dict[str, Any]:
-        """Simular señal de trading con filtros de mercado"""
+    def send_daily_summary(self):
+        """Enviar resumen diario por Telegram"""
         try:
-            # Simular precio actual (BNB/USDT)
-            current_price = random.uniform(500, 650)
+            if not self.daily_summary_enabled:
+                return
+            
+            # Calcular métricas del día
+            if not self.daily_trades:
+                return
+            
+            total_trades = len(self.daily_trades)
+            winning_trades = len([t for t in self.daily_trades if t.get('result') == 'GANANCIA'])
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            
+            # Calcular Profit Factor
+            gains = sum([t.get('net_pnl', 0) for t in self.daily_trades if t.get('net_pnl', 0) > 0])
+            losses = abs(sum([t.get('net_pnl', 0) for t in self.daily_trades if t.get('net_pnl', 0) < 0]))
+            profit_factor = gains / losses if losses > 0 else (gains if gains > 0 else 0)
+            
+            # Calcular Drawdown
+            peak_capital = max([t.get('capital', 50.0) for t in self.daily_trades])
+            current_capital = self.daily_trades[-1].get('capital', 50.0) if self.daily_trades else 50.0
+            drawdown = ((peak_capital - current_capital) / peak_capital * 100) if peak_capital > 0 else 0
+            
+            # Calcular P&L neto del día
+            daily_pnl_net = sum([t.get('net_pnl', 0) for t in self.daily_trades])
+            
+            # Crear mensaje de resumen
+            summary_message = f"""
+📊 **RESUMEN DIARIO - FASE 1.6 MULTI-PAR**
+
+📅 **Fecha**: {datetime.now().strftime('%Y-%m-%d')}
+🕐 **Hora**: {datetime.now().strftime('%H:%M:%S')}
+
+💰 **Capital**: ${current_capital:.2f}
+📈 **P&L Neto Día**: ${daily_pnl_net:.4f}
+
+📊 **Métricas**:
+🎯 **Trades**: {total_trades}
+✅ **Ganados**: {winning_trades}
+📊 **Win Rate**: {win_rate:.1f}%
+📈 **Profit Factor**: {profit_factor:.2f}
+📉 **Drawdown**: {drawdown:.2f}%
+
+🔄 **Multi-Par**:
+📊 **Símbolos**: {', '.join(self.symbols)}
+🎯 **Actual**: {self.get_current_symbol()}
+🔄 **Rotaciones**: {self.symbol_rotation_counter}
+
+🛡️ **Seguridad**:
+📊 **DD Máximo**: {config.DAILY_MAX_DRAWDOWN_PCT}%
+📊 **Trades Máx/Día**: {config.MAX_TRADES_PER_DAY}
+📊 **TP Mínimo**: {config.TP_MIN_BPS} bps
+
+---
+🤖 **Bot FASE 1.6 - MULTI-PAR**
+            """
+            
+            self.send_telegram_message(summary_message)
+            self.logger.info("✅ Resumen diario enviado a Telegram")
+            
+            # Limpiar datos del día
+            self.daily_trades = []
+            self.daily_pnl_net = 0.0
+            self.last_daily_summary = datetime.now()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error enviando resumen diario: {e}")
+    
+    def check_daily_summary_time(self):
+        """Verificar si es hora de enviar resumen diario"""
+        try:
+            if not self.daily_summary_enabled:
+                return
+            
+            current_time = datetime.now()
+            
+            # Verificar si es la hora configurada (22:05)
+            if (current_time.hour == 22 and current_time.minute == 5 and 
+                (self.last_daily_summary is None or 
+                 (current_time - self.last_daily_summary).days >= 1)):
+                
+                self.send_daily_summary()
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error verificando hora de resumen: {e}")
+    
+    def simulate_trading_signal(self) -> Dict[str, Any]:
+        """Simular señal de trading con multi-par + Auto Pair Selector"""
+        try:
+            # Rotar símbolo si es necesario (multi-par tradicional)
+            if self.should_rotate_symbol():
+                self.rotate_symbol()
+            
+            # Usar pares activos del Auto Pair Selector si está habilitado
+            if self.auto_pair_selector and self.pair_selector and self.active_pairs:
+                # Seleccionar símbolo de los pares activos
+                current_symbol = random.choice(self.active_pairs)
+                self.logger.info(f"🎯 Auto Pair Selector: usando símbolo activo {current_symbol}")
+            else:
+                # Usar método tradicional de rotación
+                current_symbol = self.get_current_symbol()
+            
+            # Simular precio según el símbolo (expandido para más pares)
+            price_ranges = {
+                'BTCUSDT': (40000, 50000),
+                'ETHUSDT': (2000, 3000),
+                'BNBUSDT': (500, 650),
+                'SOLUSDT': (80, 120),
+                'XRPUSDT': (0.4, 0.6),
+                'ADAUSDT': (0.3, 0.5),
+                'DOGEUSDT': (0.06, 0.10),
+                'LINKUSDT': (12, 18),
+                'TONUSDT': (2.0, 3.0),
+                'MATICUSDT': (0.6, 1.0),
+                'ARBUSDT': (1.0, 1.5),
+                'OPUSDT': (2.5, 3.5),
+                'LTCUSDT': (65, 85),
+                'APTUSDT': (6, 10),
+                'TRXUSDT': (0.06, 0.10)
+            }
+            
+            if current_symbol in price_ranges:
+                min_price, max_price = price_ranges[current_symbol]
+                current_price = random.uniform(min_price, max_price)
+            else:
+                current_price = random.uniform(500, 650)
+            
             volume = random.uniform(1000, 5000)
             
             # Verificar condiciones de mercado
@@ -1087,7 +1347,8 @@ class ProfessionalTradingBot:
                     'reason': market_conditions['reason'],
                     'price': current_price,
                     'volume': volume,
-                    'market_data': market_conditions
+                    'market_data': market_conditions,
+                    'symbol': current_symbol
                 }
             
             # Generar señal basada en dirección del mercado
@@ -1098,23 +1359,25 @@ class ProfessionalTradingBot:
             
             signal_data = {
                 'signal': direction,
+                'direction': direction,  # Para compatibilidad
                 'price': current_price,
                 'volume': volume,
                 'confidence': confidence,
                 'timestamp': datetime.now().isoformat(),
-                'market_data': market_conditions
+                'market_data': market_conditions,
+                'symbol': current_symbol
             }
             
             friendly_reason = market_conditions.get('reason') or 'Condiciones favorables'
-            self.logger.info(f"📊 Señal: {direction} - {friendly_reason}")
+            self.logger.info(f"📊 Señal: {direction} {current_symbol} - {friendly_reason}")
             return signal_data
             
         except Exception as e:
-            self.logger.error(f"❌ Error generando señal FASE 1.6: {e}")
-            return {'signal': 'ERROR', 'reason': str(e)}
+            self.logger.error(f"❌ Error generando señal FASE 1.6 MULTI-PAR + AUTO PAIR SELECTOR: {e}")
+            return None
     
     def simulate_trade(self, signal: Dict[str, Any]) -> Dict[str, Any]:
-        """FASE 1.6: Simular ejecución de trade con gestión de riesgo mejorada"""
+        """FASE 1.6: Simular ejecución de trade con multi-par"""
         try:
             if signal['signal'] in ['REJECTED', 'ERROR']:
                 # Registrar rechazo por seguridad
@@ -1171,6 +1434,7 @@ class ProfessionalTradingBot:
             entry_price = signal['price']
             direction = signal['signal']
             atr_value = signal['market_data']['atr']
+            current_symbol = signal['symbol']
             
             # === FASE 1.6: CALCULAR TARGETS DINÁMICOS ===
             targets = self.safety_manager.compute_trade_targets(entry_price, atr_value)
@@ -1239,7 +1503,7 @@ class ProfessionalTradingBot:
             # === FASE 1.6: CREAR DATOS DEL TRADE MEJORADOS ===
             trade_data = {
                 'timestamp': datetime.now().isoformat(),
-                'symbol': 'BNBUSDT',
+                'symbol': current_symbol,
                 'direction': direction,
                 'entry_price': executed_price,
                 'exit_price': exit_price,
@@ -1253,7 +1517,7 @@ class ProfessionalTradingBot:
                 'atr_value': atr_value,
                 'confidence': signal['confidence'],
                 'strategy': 'breakout',
-                'phase': 'FASE 1.6',
+                'phase': 'FASE 1.6 MULTI-PAR',
                 'safety_status': safety_status,
                 
                 # === FASE 1.6: NUEVAS MÉTRICAS ===
@@ -1292,42 +1556,52 @@ class ProfessionalTradingBot:
             # Añadir a métricas
             self.metrics_tracker.add_operation(trade_data)
             
+            # Añadir a trades del día para resumen
+            self.daily_trades.append(trade_data)
+            self.daily_pnl_net += pnl_net
+            
             # Obtener métricas actualizadas
             metrics = self.metrics_tracker.get_metrics_summary()
             
             # Logging
-            self.sheets_logger.log_trade(trade_data, metrics)
-            self.local_logger.log_operation(trade_data)
-            
-            # Log FASE 1.6
-            self.logger.info(f"📊 Trade FASE 1.6: {result} | TP={targets['tp_pct']:.4f}% | SL={targets['sl_pct']:.4f}% | RR={targets['rr_ratio']:.2f}")
+            self.logger.info(f"📊 Trade FASE 1.6 MULTI-PAR: {result} | TP={targets['tp_pct']:.4f}% | SL={targets['sl_pct']:.4f}% | RR={targets['rr_ratio']:.2f}")
             self.logger.info(f"💰 P&L: Bruto=${pnl_gross:.4f} | Neto=${pnl_net:.4f} | Friction=${pnl_data['total_friction']:.4f}")
             
-            # Mensaje Telegram FASE 1.6
+            # Registrar en Google Sheets
+            self.sheets_logger.log_trade(trade_data, metrics)
+            
+            # Registrar localmente
+            self.local_logger.log_operation(trade_data)
+            
+            # Mensaje Telegram FASE 1.6 MULTI-PAR
             telegram_message = f"""
-🤖 BOT PROFESIONAL - FASE 1.6
+🤖 **BOT PROFESIONAL - FASE 1.6 MULTI-PAR**
 
-💰 Trade: {direction} BNBUSDT
-💵 Precio: ${entry_price:,.2f}
-📊 Resultado: {result}
-💸 P&L Neto: ${pnl_net:.4f}
+💰 **Trade**: {direction} {current_symbol}
+💵 **Precio**: ${entry_price:,.2f}
+📊 **Resultado**: {result}
+💸 **P&L Neto**: ${pnl_net:.4f}
 
-📈 Targets FASE 1.6:
-🎯 TP: {trade_data.get('tp_pct', 0):.4f}% ({trade_data.get('tp_bps', 0):.1f} bps)
-🎯 SL: {trade_data.get('sl_pct', 0):.4f}% ({trade_data.get('sl_bps', 0):.1f} bps)
-📊 RR: {trade_data.get('rr_ratio', 0):.2f}:1
+📈 **Targets FASE 1.6**:
+🎯 **TP**: {trade_data.get('tp_pct', 0):.4f}% ({trade_data.get('tp_bps', 0):.1f} bps)
+🎯 **SL**: {trade_data.get('sl_pct', 0):.4f}% ({trade_data.get('sl_bps', 0):.1f} bps)
+📊 **RR**: {trade_data.get('rr_ratio', 0):.2f}:1
 
-📈 Métricas:
-📊 Win Rate: {metrics['win_rate']:.2f}%
-📈 Profit Factor: {self.metrics_tracker.get_profit_factor_display()}
-📉 Drawdown: {metrics['drawdown']:.2f}%
+📈 **Métricas**:
+📊 **Win Rate**: {metrics['win_rate']:.2f}%
+📈 **Profit Factor**: {self.metrics_tracker.get_profit_factor_display()}
+📉 **Drawdown**: {metrics['drawdown']:.2f}%
 
-🛡️ Seguridad:
-📊 DD: {safety_status['intraday_drawdown']:.2f}%
-📊 DL: {safety_status['daily_loss']:.2f}%
-📊 CL: {safety_status['consecutive_losses']}
-🔒 Probation: {safety_status.get('probation_mode', False)}
-"""
+🛡️ **Seguridad**:
+📊 **DD**: {safety_status['intraday_drawdown']:.2f}%
+📊 **DL**: {safety_status['daily_loss']:.2f}%
+📊 **CL**: {safety_status['consecutive_losses']}
+🔒 **Probation**: {safety_status.get('probation_mode', False)}
+
+🔄 **Multi-Par**:
+📊 **Símbolo**: {current_symbol}
+🔄 **Rotación**: {self.symbol_rotation_counter}
+            """
             self.send_telegram_message(telegram_message)
             
             return {
@@ -1340,11 +1614,11 @@ class ProfessionalTradingBot:
             }
             
         except Exception as e:
-            self.logger.error(f"❌ Error ejecutando trade FASE 1.6: {e}")
+            self.logger.error(f"❌ Error ejecutando trade FASE 1.6 MULTI-PAR: {e}")
             return {'executed': False, 'reason': str(e)}
     
     def run_trading_cycle(self):
-        """Ejecutar ciclo de trading con optimizaciones"""
+        """Ejecutar ciclo de trading FASE 1.6 MULTI-PAR + AUTO PAIR SELECTOR"""
         try:
             self.cycle_count += 1
             current_time = datetime.now()
@@ -1352,24 +1626,47 @@ class ProfessionalTradingBot:
             self.logger.info(f"🔄 Iniciando ciclo {self.cycle_count}...")
             self.logger.info(f"🔄 Ciclo {self.cycle_count} - {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
             
-            # Generar señal
+            # Verificar resumen diario
+            self.check_daily_summary_time()
+            
+            # === AUTO PAIR SELECTOR: REBALANCE ===
+            if self.should_rebalance_pairs():
+                self.logger.info("🔄 Verificando rebalance de pares...")
+                if self.rebalance_pairs():
+                    self.logger.info("✅ Rebalance completado")
+                else:
+                    self.logger.info("📊 No se requirió rebalance")
+            
+            # Rotar símbolo si es necesario
+            if self.should_rotate_symbol():
+                self.rotate_symbol()
+            
+            # Simular señal de trading
             signal = self.simulate_trading_signal()
+            
+            if not signal:
+                self.logger.info("❌ No se generó señal de trading")
+                return
             
             # Ejecutar trade
             trade_result = self.simulate_trade(signal)
             
             if trade_result['executed']:
-                self.logger.info(f"✅ Trade FASE 1.6 ejecutado: {trade_result['trade_data']['direction']} @ ${trade_result['trade_data']['entry_price']:.2f}")
+                self.logger.info(f"✅ Trade ejecutado: {signal['direction']} @ ${signal['price']:.2f}")
+                
+                # Actualizar métricas
                 if 'metrics' in trade_result:
-                    self.logger.info(f"📊 Métricas FASE 1.6: WR={trade_result['metrics']['win_rate']:.2f}%, PF={self.metrics_tracker.get_profit_factor_display()}, DD={trade_result['metrics']['drawdown']:.2f}%")
-                else:
-                    self.logger.info(f"📊 Métricas FASE 1.6: PF={self.metrics_tracker.get_profit_factor_display()}")
+                    metrics = trade_result['metrics']
+                    self.logger.info(f"📊 Métricas: WR={metrics['win_rate']:.2f}%, PF={self.metrics_tracker.get_profit_factor_display()}, DD={metrics['drawdown']:.2f}%")
+                
+                # Enviar telemetría
+                if 'safety_status' in trade_result:
+                    self.telemetry_manager.send_telemetry(
+                        trade_result.get('metrics', {}),
+                        trade_result['safety_status']
+                    )
             else:
-                self.logger.info(f"❌ Trade rechazado: {trade_result['reason']}")
-            
-            # Enviar telemetría si es necesario
-            if trade_result['executed'] and 'metrics' in trade_result:
-                self.telemetry_manager.send_telemetry(trade_result['metrics'], trade_result['safety_status'])
+                self.logger.info(f"❌ Trade rechazado: {trade_result.get('reason', 'Desconocido')}")
             
             self.logger.info(f"✅ Ciclo {self.cycle_count} completado, esperando {self.update_interval}s...")
             
@@ -1377,117 +1674,100 @@ class ProfessionalTradingBot:
             self.logger.error(f"❌ Error en ciclo de trading FASE 1.6: {e}")
     
     def start(self):
-        """Iniciar bot de trading"""
+        """Iniciar bot FASE 1.6 MULTI-PAR"""
         try:
+            self.running = True
+            self.logger.info("🚀 Bot profesional - FASE 1.6 MULTI-PAR iniciado correctamente")
             self.logger.info("🔄 Iniciando bucle principal con optimizaciones...")
             
-            # Resetear contadores horarios cada hora
-            last_hourly_reset = datetime.now()
-            
-            while not shutdown_state["stop"] and self.running:
+            # Bucle principal
+            while self.running and not shutdown_state["stop"]:
                 try:
-                    # Resetear contadores horarios
-                    current_time = datetime.now()
-                    if (current_time - last_hourly_reset).total_seconds() >= 3600:  # 1 hora
-                        self.safety_manager.reset_hourly_counters()
-                        last_hourly_reset = current_time
-                    
-                    # Ejecutar ciclo
                     self.run_trading_cycle()
                     
-                    # Esperar intervalo con verificación de apagado
-                    sleep_responsive(self.update_interval)
-                    
+                    # Esperar entre ciclos
+                    if not shutdown_state["stop"]:
+                        sleep_responsive(self.update_interval)
+                        
                 except KeyboardInterrupt:
                     self.logger.info("🛑 Interrupción manual recibida")
                     break
                 except Exception as e:
-                    self.logger.error(f"❌ Error en bucle principal FASE 1.6: {e}")
-                    sleep_responsive(60)  # Esperar antes de reintentar, pero de forma responsiva
-            
-            # Apagado limpio
-            self.save_state_and_close()
-            
-            # Mensaje de cierre FASE 1.6
-            final_message = f"""
-🤖 BOT PROFESIONAL - FASE 1.6
-
-🛑 **APAGADO COMPLETADO**
-
-📊 **RESUMEN FINAL FASE 1.6:**
-🔄 Ciclos ejecutados: {self.cycle_count}
-💰 Capital final: ${self.current_capital:.2f}
-📈 P&L: ${self.current_capital - 50.0:.2f}
-
-✅ Bot FASE 1.6 cerrado correctamente
-"""
-            self.send_telegram_message(final_message)
-            self.logger.info("✅ Bot FASE 1.6 cerrado correctamente")
+                    self.logger.error(f"❌ Error en bucle principal: {e}")
+                    if not shutdown_state["stop"]:
+                        sleep_responsive(60)  # Esperar 1 minuto antes de reintentar
             
         except Exception as e:
-            self.logger.error(f"❌ Error iniciando bot FASE 1.6: {e}")
+            self.logger.error(f"❌ Error iniciando bot: {e}")
+        finally:
+            self.save_state_and_close()
     
     def save_state_and_close(self):
-        """Guardar estado y cerrar conexiones"""
+        """Guardar estado y cerrar bot FASE 1.6 MULTI-PAR"""
         try:
             self.logger.info("💾 Guardando estado...")
             
-            # Guardar métricas finales
-            final_metrics = self.metrics_tracker.get_metrics_summary()
+            # Calcular métricas finales
+            metrics = self.metrics_tracker.get_metrics_summary()
+            self.logger.info(f"📊 Win Rate calculado: {metrics['win_rate']:.2f}%")
+            self.logger.info(f"📈 Profit Factor (neto) calculado: {self.metrics_tracker.get_profit_factor_display()}")
+            self.logger.info(f"📉 Drawdown calculado: {metrics['drawdown']:.2f}%")
+            self.logger.info(f"📊 Métricas calculadas: WR={metrics['win_rate']:.2f}%, PF={self.metrics_tracker.get_profit_factor_display()}, DD={metrics['drawdown']:.2f}%")
             
-            # Log final a Google Sheets
-            if self.sheets_logger.sheets_enabled:
-                final_data = {
-                    'timestamp': datetime.now().isoformat(),
-                    'event': 'BOT_SHUTDOWN',
-                    'cycles_executed': self.cycle_count,
-                    'final_capital': self.current_capital,
-                    'final_pnl': self.current_capital - 50.0,
-                    'win_rate': final_metrics.get('win_rate', 0),
-                    'profit_factor': self.metrics_tracker.get_profit_factor_display(),
-                    'drawdown': final_metrics.get('drawdown', 0),
-                    'symbol': 'BNBUSDT'
-                }
-                self.sheets_logger.log_trade(final_data, final_metrics)
+            # Enviar resumen final si hay trades
+            if self.daily_trades:
+                self.send_daily_summary()
             
-            # Guardar resumen local CSV
-            try:
-                import csv
-                summary_path = os.path.join(self.local_logger.data_dir, 'session_summary.csv')
-                file_exists = os.path.exists(summary_path)
-                with open(summary_path, 'a', newline='', encoding='utf-8') as csvfile:
-                    writer = csv.writer(csvfile)
-                    if not file_exists:
-                        writer.writerow([
-                            'timestamp', 'cycles_executed', 'final_capital', 'final_pnl',
-                            'win_rate', 'profit_factor', 'drawdown', 'symbol'
-                        ])
-                    writer.writerow([
-                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        self.cycle_count,
-                        f"{self.current_capital:.2f}",
-                        f"{(self.current_capital - 50.0):.2f}",
-                        f"{final_metrics.get('win_rate', 0):.2f}",
-                        self.metrics_tracker.get_profit_factor_display(),
-                        f"{final_metrics.get('drawdown', 0):.2f}",
-                        'BNBUSDT'
-                    ])
-                self.logger.info("✅ Resumen de sesión guardado en CSV")
-            except Exception as e:
-                self.logger.warning(f"⚠️ No se pudo guardar resumen CSV: {e}")
+            # Guardar resumen de sesión
+            session_summary = {
+                'session_start': self.session_start_time.isoformat(),
+                'session_end': datetime.now().isoformat(),
+                'initial_capital': 50.0,
+                'final_capital': self.current_capital,
+                'total_trades': len(self.metrics_tracker.operations_history),
+                'win_rate': metrics['win_rate'],
+                'profit_factor': self.metrics_tracker.get_profit_factor_display(),
+                'drawdown': metrics['drawdown'],
+                'symbols_traded': list(set([t.get('symbol', 'UNKNOWN') for t in self.metrics_tracker.operations_history])),
+                'symbol_rotations': self.symbol_rotation_counter
+            }
             
-            # Cerrar conexiones (si existieran)
-            try:
-                if hasattr(self, 'binance_client') and self.binance_client:
-                    self.binance_client.close_connection()
-            except Exception:
-                pass
+            # Guardar en archivo
+            import json
+            with open('session_summary.json', 'w') as f:
+                json.dump(session_summary, f, indent=2)
             
+            self.logger.info("✅ Resumen de sesión guardado en CSV")
             self.logger.info("✅ Estado guardado correctamente")
             
+            # Mensaje de cierre
+            closing_message = f"""
+🛑 **BOT PROFESIONAL - FASE 1.6 MULTI-PAR CERRADO**
+
+📅 **Sesión**: {self.session_start_time.strftime('%Y-%m-%d %H:%M')} → {datetime.now().strftime('%Y-%m-%d %H:%M')}
+💰 **Capital**: ${50.0:.2f} → ${self.current_capital:.2f}
+
+📊 **Resumen Final**:
+🎯 **Trades**: {len(self.metrics_tracker.operations_history)}
+📊 **Win Rate**: {metrics['win_rate']:.2f}%
+📈 **Profit Factor**: {self.metrics_tracker.get_profit_factor_display()}
+📉 **Drawdown**: {metrics['drawdown']:.2f}%
+
+🔄 **Multi-Par**:
+📊 **Símbolos**: {', '.join(list(set([t.get('symbol', 'UNKNOWN') for t in self.metrics_tracker.operations_history])))}
+🔄 **Rotaciones**: {self.symbol_rotation_counter}
+
+---
+🤖 **Bot cerrado correctamente**
+            """
+            self.send_telegram_message(closing_message)
+            
+            self.logger.info("✅ Bot FASE 1.6 MULTI-PAR cerrado correctamente")
+            self.logger.info("✅ Bot terminado correctamente")
+            
         except Exception as e:
-            self.logger.error(f"❌ Error guardando estado FASE 1.6: {e}")
-    
+            self.logger.error(f"❌ Error guardando estado: {e}")
+
 class TelemetryManager:
     """Sistema de telemetría y alertas"""
     
@@ -1636,45 +1916,68 @@ class TelemetryManager:
             self.logger.error(f"❌ Error enviando alerta crítica: {e}")
 
 def main():
-    """Función principal - FASE 1.5 PATCHED"""
+    """Función principal del bot FASE 1.6 MULTI-PAR"""
     try:
-        # Parsear argumentos
-        parser = argparse.ArgumentParser(description='Trading Bot Profesional - FASE 1.6')
-        parser.add_argument('--mode', default='testnet', choices=['testnet', 'live'], 
-                          help='Modo de operación (testnet/live)')
-        parser.add_argument('--config', default='config_survivor_final.py',
+        # Configurar argumentos
+        parser = argparse.ArgumentParser(description='Trading Bot Profesional FASE 1.6 MULTI-PAR')
+        parser.add_argument('--mode', type=str, default='testnet', choices=['testnet', 'production'],
+                          help='Modo de operación (testnet/production)')
+        parser.add_argument('--config', type=str, default='config_fase_1_6.py',
                           help='Archivo de configuración')
-        parser.add_argument('--strategy', default='breakout',
-                          help='Estrategia de trading')
         
         args = parser.parse_args()
         
         # Configurar logging
-        logging.info(f"🚀 Iniciando Trading Bot - FASE 1.6")
-        logging.info(f"📊 Modo: {args.mode}")
-        logging.info(f"⚙️ Configuración: {args.config}")
-        logging.info(f"🎯 Estrategia: {args.strategy}")
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler('trading_bot.log')
+            ]
+        )
         
-        # Crear y ejecutar bot
+        logger = logging.getLogger(__name__)
+        
+        # Mostrar información de inicio
+        logger.info("🚀 Iniciando Trading Bot - FASE 1.6 MULTI-PAR")
+        logger.info(f"📊 Modo: {args.mode}")
+        logger.info(f"⚙️ Configuración: {args.config}")
+        logger.info("🎯 Estrategia: breakout")
+        
+        # Validar configuración
+        if not config.validate_config():
+            logger.error("❌ Configuración inválida")
+            sys.exit(1)
+        
+        # Mostrar resumen de configuración
+        summary = config.get_config_summary()
+        logger.info("📊 Configuración FASE 1.6 MULTI-PAR:")
+        logger.info(f"🎯 Símbolos: {', '.join(summary['symbols'])}")
+        logger.info(f"📊 TP Mínimo: {summary['tp_min_bps']} bps")
+        logger.info(f"📊 RR Garantizado: 1.25:1")
+        logger.info(f"🛡️ DD Máximo: {summary['daily_max_drawdown_pct']}%")
+        logger.info(f"📊 Trades Máx/Día: {summary['max_trades_per_day']}")
+        
+        # Crear y iniciar bot
         bot = ProfessionalTradingBot()
         
-        try:
-            bot.start()
-        except KeyboardInterrupt:
-            logging.info("🛑 Interrupción manual recibida")
-        except Exception as e:
-            logging.error(f"❌ Error en ejecución: {e}")
-        finally:
-            # Asegurar apagado limpio
-            if not shutdown_state["stop"]:
-                logging.info("🛑 Iniciando apagado limpio...")
-                shutdown_state["stop"] = True
-            
-            logging.info("✅ Bot terminado correctamente")
-            sys.exit(0)
-            
+        # Configurar señales de apagado
+        def signal_handler(signum, frame):
+            logger.info("🛑 Señal de apagado recibida")
+            shutdown_state["stop"] = True
+            bot.running = False
+        
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        # Iniciar bot
+        bot.start()
+        
+    except KeyboardInterrupt:
+        logger.info("🛑 Interrupción manual recibida")
     except Exception as e:
-        logging.error(f"❌ Error crítico en main FASE 1.6: {e}")
+        logger.error(f"❌ Error en función principal: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

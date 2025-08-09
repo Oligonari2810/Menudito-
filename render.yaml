@@ -10,15 +10,180 @@ services:
     startCommand: |
       python minimal_working_bot.py --mode=testnet
     envVars:
+      # === FASE 1.6: CONFIGURACIÓN BÁSICA ===
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: LOG_LEVEL
         value: "INFO"
+      - key: MODE
+        value: "testnet"
+      - key: LIVE_TRADING
+        value: "true"
+      - key: SHADOW_MODE
+        value: "true"
+      - key: SESSION_WINDOW
+        value: "09:00-22:00 Europe/Madrid"
+      - key: TIMEZONE
+        value: "Europe/Madrid"
+      
+      # === AUTO PAIR SELECTOR ===
+      - key: AUTO_PAIR_SELECTOR
+        value: "true"
+      - key: PAIRS_CANDIDATES
+        value: "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOGEUSDT,LINKUSDT,TONUSDT,MATICUSDT,ARBUSDT,OPUSDT,LTCUSDT,APTUSDT,TRXUSDT"
+      - key: MAX_ACTIVE_PAIRS
+        value: "4"
+      - key: REBALANCE_MINUTES
+        value: "60"
+      - key: LOOKBACK_HOURS
+        value: "24"
+      
+      # === AUTO PAIR SELECTOR: FILTROS MÍNIMOS ===
+      - key: CAND_MIN_24H_VOLUME_USD
+        value: "100000000"
+      - key: CAND_MIN_ATR_BPS
+        value: "15.0"
+      - key: CAND_MAX_SPREAD_BPS
+        value: "2.0"
+      - key: CAND_MIN_TREND_SCORE
+        value: "0.60"
+      - key: CAND_MAX_CORRELATION
+        value: "0.85"
+      
+      # === AUTO PAIR SELECTOR: SEGURIDAD DE CAMBIO ===
+      - key: DO_NOT_SWITCH_IF_POSITION_OPEN
+        value: "true"
+      - key: MIN_HOURS_BETWEEN_SWITCHES
+        value: "2"
+      
+      # === AUTO PAIR SELECTOR: FALLBACK ===
+      - key: ENABLE_MULTI_PAIR
+        value: "true"
+      - key: PAIRS
+        value: "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT"
+      
+      # === FASE 1.6: RIESGO (V1 BLOQUEADA) ===
+      - key: POSITION_SIZING_MODE
+        value: "percent_of_equity"
+      - key: POSITION_PERCENT
+        value: "0.10"
+      - key: MIN_NOTIONAL_USD
+        value: "5"
+      - key: DAILY_MAX_DRAWDOWN_PCT
+        value: "0.50"
+      - key: WEEKLY_MAX_DRAWDOWN_PCT
+        value: "1.50"
+      - key: MAX_CONSECUTIVE_LOSSES
+        value: "2"
+      - key: MAX_TRADES_PER_DAY
+        value: "6"
+      - key: COOLDOWN_AFTER_LOSS_MIN
+        value: "30"
+      
+      # === FASE 1.6: FEES/SLIPPAGE (V1 BLOQUEADA) ===
+      - key: FEE_TAKER_BPS
+        value: "7.5"
+      - key: FEE_MAKER_BPS
+        value: "2.0"
+      - key: SLIPPAGE_BPS
+        value: "1.5"
+      - key: TP_BUFFER_BPS
+        value: "4.0"
+      
+      # === FASE 1.6: OBJETIVOS DE SALIDA (V1 BLOQUEADA) ===
+      - key: TP_MODE
+        value: "fixed_min"
+      - key: TP_MIN_BPS
+        value: "22.0"
+      - key: ATR_PERIOD
+        value: "14"
+      - key: TP_ATR_MULT
+        value: "0.50"
+      - key: SL_ATR_MULT
+        value: "0.40"
+      
+      # === FASE 1.6: FILTROS DE ENTRADA (V1 BLOQUEADA) ===
+      - key: MIN_RANGE_BPS
+        value: "5.0"
+      - key: MAX_SPREAD_BPS
+        value: "2.0"
+      - key: MIN_VOL_USD
+        value: "5000000"
+      - key: ATR_MIN_PCT
+        value: "0.041"
+      
+      # === FASE 1.6: LATENCIA/ESTABILIDAD (V1 BLOQUEADA) ===
+      - key: MAX_WS_LATENCY_MS
+        value: "1500"
+      - key: MAX_REST_LATENCY_MS
+        value: "800"
+      - key: RETRY_ORDER
+        value: "2"
+      
+      # === FASE 1.6: KILL-SWITCH ===
+      - key: KILL_SWITCH_TRIGGERED
+        value: "false"
+      - key: AUTO_REVERT_TO_SHADOW
+        value: "true"
+      
+      # === FASE 1.6: TELEMETRÍA ===
+      - key: TELEMETRY_ENABLED
+        value: "true"
+      - key: SLIPPAGE_TRACKING
+        value: "true"
+      - key: FILL_LATENCY_TRACKING
+        value: "true"
+      - key: REAL_VS_TESTNET_COMPARISON
+        value: "true"
+      - key: MAX_LATENCY_MS
+        value: "1500"
+      - key: MAX_RETRY_ATTEMPTS
+        value: "2"
+      - key: PAUSE_AFTER_FAILURE_MIN
+        value: "15"
+      
+      # === FASE 1.6: VALIDACIONES ===
+      - key: DAILY_REPORT_ENABLED
+        value: "true"
+      - key: READY_TO_SCALE_THRESHOLD_PF
+        value: "1.5"
+      - key: READY_TO_SCALE_THRESHOLD_DD
+        value: "0.5"
+      - key: READY_TO_SCALE
+        value: "false"
+      
+      # === FASE 1.6: RESUMEN DIARIO ===
+      - key: DAILY_SUMMARY_ENABLED
+        value: "true"
+      - key: DAILY_SUMMARY_TIME
+        value: "22:05 Europe/Madrid"
+      
+      # === FASE 1.6: OPCIONALES ===
+      - key: BREAKEVEN_ENABLED
+        value: "false"
+      
+      # === FASE 1.6: CONFIGURACIÓN ADICIONAL ===
+      - key: CYCLE_INTERVAL_SECONDS
+        value: "180"
+      - key: MAKER_ONLY
+        value: "true"
+      - key: SPREAD_ADAPTIVE
+        value: "true"
+      - key: POSITION_SIZE_USD_MIN
+        value: "2.00"
+      
+      # === CREDENCIALES (CONFIGURAR EN RENDER) ===
       - key: GOOGLE_SHEETS_CREDENTIALS
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_SECRET_KEY
+        sync: false
+      - key: GOOGLE_SHEETS_SPREADSHEET_ID
         sync: false
     runtime:
       shutdownGracePeriodSeconds: 60 
